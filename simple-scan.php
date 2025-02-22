@@ -5,13 +5,9 @@ ini_set('display_errors', 0);
 $scan_dir = $_SERVER['DOCUMENT_ROOT'];
 
 $find = array(
-    'default',
     'base64_decode', 'base64_encode', 'gzuncompress', 'gzdecode', 'gzinflate',  
     'passthru', 'popen', 'proc_open', 'shell_exec', 'exec',  
-    'eval', 'assert', 'call_user_func', 'call_user_func_array', 'create_function',  
-    'curl_exec', 'curl_multi_exec', 'stream_context_create',  
-    'preg_replace', 'preg_replace_callback',  
-    'posix_getpwuid', 'posix_getgrgid'
+    'eval', 'curl_exec', 'curl_multi_exec'
 );
 
 function scan_directory($dir, $signatures) {
