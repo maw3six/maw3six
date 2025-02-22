@@ -2,7 +2,7 @@
 error_reporting(0);
 ini_set('display_errors', 0);
 
-$scan_dir = __DIR__;
+$scan_dir = $_SERVER['DOCUMENT_ROOT'];
 
 $find = array(
     'default',
