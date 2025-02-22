@@ -6,9 +6,9 @@ $scan_dir = $_SERVER['DOCUMENT_ROOT'];
 
 $find = array(
     'base64_decode', 'base64_encode', 'gzuncompress', 'gzdecode', 'gzinflate',  
-    'passthru', 'popen', 'proc_open', 'shell_exec', 'exec',  
-    'eval', 'curl_exec', 'curl_multi_exec'
+    'passthru', 'shell_exec', 'exec', 'eval', 'curl_exec', 'curl_multi_exec'
 );
+
 
 function scan_directory($dir, $signatures) {
     $results = [];
@@ -16,15 +16,20 @@ function scan_directory($dir, $signatures) {
     foreach ($files as $file) {
         if (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
             $content = file_get_contents($file);
+            $found_signatures = [];
             foreach ($signatures as $sig) {
                 if (stripos($content, $sig) !== false) {
-                    $results[] = [
-                        'path' => $file->getPathname(),
-                        'permissions' => substr(sprintf('%o', fileperms($file)), -4),
-                        'last_modified' => date("Y-m-d H:i:s", filemtime($file))
-                    ];
-                    break;
+                    $found_signatures[] = $sig;
+                    if (count($found_signatures) >= 3) break;
                 }
+            }
+            if (!empty($found_signatures)) {
+                $results[] = [
+                    'path' => $file->getPathname(),
+                    'permissions' => substr(sprintf('%o', fileperms($file)), -4),
+                    'last_modified' => date("Y-m-d H:i:s", filemtime($file)),
+                    'signatures' => $found_signatures
+                ];
             }
         }
     }
@@ -41,9 +46,9 @@ if (isset($_GET['delete'])) {
 
 if (isset($_POST['file']) && isset($_POST['action'])) {
     $file = $_POST['file'];
-    if ($_POST['action'] === 'load' && file_exists($file)) {
-        echo htmlspecialchars(file_get_contents($file));
-        exit;
+	if ($_POST['action'] === 'load' && file_exists($file)) {
+    echo htmlspecialchars_decode(file_get_contents($file), ENT_QUOTES);
+    exit;
     } elseif ($_POST['action'] === 'save' && isset($_POST['content'])) {
         file_put_contents($file, $_POST['content']);
         echo "Saved!!";
@@ -176,6 +181,7 @@ $suspected_files = scan_directory($scan_dir, $find);
         <table>
             <tr>
                 <th>File</th>
+                <th>Detected Strings</th>				
                 <th>Permissions</th>
                 <th>Last Modified</th>
                 <th>Action</th>
@@ -183,6 +189,7 @@ $suspected_files = scan_directory($scan_dir, $find);
             <?php foreach ($suspected_files as $file) : ?>
                 <tr>
                     <td class="danger"><?php echo htmlspecialchars($file['path']); ?></td>
+					<td><?php echo htmlspecialchars(implode(', ', $file['signatures'])); ?></td>
                     <td><?php echo htmlspecialchars($file['permissions']); ?></td>
                     <td><?php echo htmlspecialchars($file['last_modified']); ?></td>
 <td>
@@ -208,31 +215,35 @@ $suspected_files = scan_directory($scan_dir, $find);
             <button id="saveFile">Save</button>
         </div>
     </div>
-    <script>
-        $(document).ready(function() {
-            let currentFile = '';
-            $('.edit-btn').click(function(e) {
-                e.preventDefault();
-                currentFile = $(this).data('file');
-                $.post('', { file: currentFile, action: 'load' }, function(response) {
-                    $('#fileContent').val(response);
-                    $('#editModal').fadeIn();
-                });
-            });
-            $('.close').click(function() {
-                $('#editModal').fadeOut();
-            });
-            $('#saveFile').click(function() {
-                $.post('', {
-                    file: currentFile,
-                    action: 'save',
-                    content: $('#fileContent').val()
-                }, function() {
-                    alert('Saved!!');
-                    $('#editModal').fadeOut();
-                });
+<script>
+    $(document).ready(function() {
+        let currentFile = '';
+
+        $('.edit-btn').click(function(e) {
+            e.preventDefault();
+            currentFile = $(this).data('file');
+            $.post('', { file: currentFile, action: 'load' }, function(response) {
+                $('#fileContent').val($('<textarea/>').html(response).text()); // Menghindari entitas HTML
+                $('#editModal').fadeIn();
             });
         });
-    </script>
+
+        $('.close').click(function() {
+            $('#editModal').fadeOut();
+        });
+
+        $('#saveFile').click(function() {
+            $.post('', {
+                file: currentFile,
+                action: 'save',
+                content: $('#fileContent').val()
+            }, function() {
+                alert('Saved!!');
+                $('#editModal').fadeOut();
+            });
+        });
+    });
+</script>
+
 </body>
 </html>
