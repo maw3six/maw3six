@@ -760,7 +760,7 @@ if (isset($_POST['zip'])) {
 <html>
 <head>
     <title>Apa Maw?</title>
-  <link rel="stylesheet" href="https://raw.githubusercontent.com/maw3six/maw3six/refs/heads/main/bypassed/styles.css">  
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/maw3six/maw3six/bypassed/styles.css">
 </head>
 <body>
     <div class="container">
