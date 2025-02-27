@@ -1,0 +1,208 @@
+@import url('https://fonts.googleapis.com/css2?family=Teko:wght@400;700&display=swap');
+
+body {
+    font-family: 'Teko', sans-serif;
+    margin: 0;
+    padding: 20px;
+    background: url('https://wallpapercave.com/uwp/uwp4233201.jpeg') no-repeat center center fixed;
+    background-size: cover;
+    color: #e63946;
+}
+
+.container, .footer {
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 20px;
+    border: 2px solid #e63946;
+    border-radius: 8px;
+    box-shadow: 0 0 15px rgba(230, 57, 70, 0.7);
+    background-color: #2c2c2ce5;
+    position: relative;
+}
+
+.container-table {
+    max-width: 800px;
+    padding: 20px;
+    border: 2px solid #e63946;
+    border-radius: 8px;
+    box-shadow: 0 0 15px rgba(230, 57, 70, 0.7);
+    background-color: #e7b97b;
+    position: relative;
+}
+
+h1 {
+    text-align: center;
+    color: #e63946;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    color: #e63946;
+    background-color: #e7b97b;
+}
+
+table, th, td {
+    border: 1px solid #e63946;
+}
+
+th, td {
+    padding: 10px;
+    text-align: center;
+	font-size: 1.5em;
+}
+
+tr:hover {
+    background-color: #f8d7da;
+}
+
+.breadcrumb a, .dropdown-content a {
+    color: white;
+    text-decoration: none;
+}
+
+.breadcrumb a:hover, .dropdown-content a:hover {
+    text-decoration: underline;
+}
+
+.upload-cmd-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 5px;
+    margin-top: 2px;
+}
+
+.upload-form, .cmd-form {
+    width: 50%;
+}
+
+.command-output {
+    background-color: #3d3d3d;
+    color: #e63946;
+    padding: 12px;
+    font-family: monospace;
+    white-space: pre-wrap;
+    border: 2px solid #e63946;
+    overflow-y: auto;
+    height: 220px;
+    width: 100%;
+    max-width: 800px;
+    margin-top: 10px;
+}
+
+@media (max-width: 600px) {
+    .command-output {
+        height: 160px;
+        max-width: 100%;
+    }
+}
+
+.button {
+    display: inline-block;
+    padding: 6px 12px;
+    background-color: #b71c1c;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    border: 1px solid #e63946;
+    font-weight: bold;
+    transition: background-color 0.3s;
+}
+
+.button:hover {
+    background-color: #8b0000;
+}
+
+.sidebar {
+    position: fixed;
+    top: 0;
+    right: -400px;
+    width: 320px;
+    height: 100%;
+    background-color: #2c2c2ce5;
+    box-shadow: 0 0 10px rgba(230, 57, 70, 0.5);
+    transition: right 0.3s ease-in-out;
+    border-left: 2px solid #e63946;
+}
+
+.sidebar.open {
+    right: 0;
+}
+
+.menu-icon {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 35px;
+    height: 35px;
+    background-color: #b71c1c;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid #e63946;
+    transition: background 0.3s;
+}
+
+.menu-icon::before,
+.menu-icon::after {
+    content: "";
+    position: absolute;
+    width: 22px;
+    height: 3px;
+    background-color: #e63946;
+    transition: transform 0.3s ease-in-out;
+}
+
+.menu-icon::before {
+    transform: translateY(-7px);
+}
+
+.menu-icon::after {
+    transform: translateY(7px);
+}
+
+.menu-icon.open::before {
+    transform: translateY(0px) rotate(45deg);
+}
+
+.menu-icon.open::after {
+    transform: translateY(0px) rotate(-45deg);
+}
+
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropbtn {
+    background-color: #b71c1c;
+    color: white;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #e63946;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.dropdown-content {
+    display: none;
+    position: absolute;
+    background-color: #2c2c2ce5;
+    border: 1px solid #e63946;
+    min-width: 160px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    z-index: 1;
+}
+
+.dropdown:hover .dropdown-content {
+    display: block;
+}
+
+.dropdown:hover .dropbtn {
+    background-color: #8b0000;
+}
+
+
