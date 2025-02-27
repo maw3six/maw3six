@@ -38,7 +38,7 @@ if (isset($_SERVER['HTTP_CF_CONNECTING_IP']) && defined('CLOUDFLARE_VERSION')) {
     }
 }
 
-$hashed_password = '$2a$12$jgLtzrLo9vOkmJILUYcEgetK3bUl9EzFwItM3Fz0WeQJ9Al9eJMYO';
+$hashed_password = '$2a$12$SZJjIHAiGcPt7DhhB9OIcu.9t5qQZy2GLLzpAnuLHHk3TFaFWLPP.';
 $session_duration = 3600;
 
 if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
