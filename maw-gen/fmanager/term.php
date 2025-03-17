@@ -205,8 +205,8 @@ if (isset($_POST['summon_shtml'])) {
     }
     input[type=text] {
       width:100%;
-      background:#2a004d; 
-      border:1px solid #3b006b; 
+      background:#100f1014; 
+      border:1px solid #00ed12; 
       color:#fff; 
       border-radius:4px; 
       padding:8px;
