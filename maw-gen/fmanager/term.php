@@ -213,7 +213,7 @@ if (isset($_POST['summon_shtml'])) {
       margin-bottom:8px;
     }
     select {
-      background:#2a004d; 
+      background:#02020200; 
       border:1px solid #3b006b; 
       color:#fff;
       border-radius:4px;
