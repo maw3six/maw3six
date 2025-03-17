@@ -214,7 +214,7 @@ if (isset($_POST['summon_shtml'])) {
     }
     select {
       background:#02020200; 
-      border:1px solid #3b006b; 
+      border:1px solid #00ed12; 
       color:#fff;
       border-radius:4px;
       padding:4px 8px;
@@ -241,7 +241,7 @@ if (isset($_POST['summon_shtml'])) {
       width:100%;
       height:200px;
       background:#0a001a;
-      border:1px solid #3b006b;
+      border:1px solid #00ed12;
       border-radius:6px;
       color:#fff;
       padding:10px;
