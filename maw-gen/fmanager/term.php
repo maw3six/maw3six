@@ -157,21 +157,21 @@ if (isset($_POST['summon_shtml'])) {
     header {
       background:#0f0027; 
       padding:10px 20px; 
-      border-bottom:3px solid #00fceb; /* neon line */
+      border-bottom:3px solid #00ed12; /* neon line */
       display:flex; 
       align-items:center;
     }
     header h1 {
       margin:0; 
       font-size:1.3em; 
-      color:#00fceb; 
-      text-shadow: 0 0 5px #00fceb;
+      color:#00ed12; 
+      text-shadow: 0 0 5px #00ed12;
     }
     .container { 
       padding:20px; 
     }
     .menu-bar button {
-      background:#00fceb; 
+      background:#00ed12; 
       color:#0f0027; 
       border:none; 
       padding:8px 16px; 
@@ -184,20 +184,19 @@ if (isset($_POST['summon_shtml'])) {
     }
     .menu-bar button:hover {
       background:#33ffee;
-      box-shadow:0 0 8px #00fceb;
+      box-shadow:0 0 8px #00ed12;
     }
     .term-box {
       display:none;
-      background:#1c0033; /* Panel ungu gelap */
-      border:2px solid #00fceb;
+      border:2px solid #00ed12;
       border-radius:6px;
       padding:20px;
       margin-bottom:20px;
     }
     .term-box h2 {
-      color:#00fceb;
+      color:#00ed12;
       margin-top:0;
-      text-shadow: 0 0 5px #00fceb;
+      text-shadow: 0 0 5px #00ed12;
     }
     label {
       font-weight:bold; 
@@ -223,7 +222,7 @@ if (isset($_POST['summon_shtml'])) {
       font-weight:bold;
     }
     .btn-submit {
-      background:#00fceb; 
+      background:#00ed12; 
       color:#0f0027; 
       border:none; 
       padding:8px 16px; 
@@ -236,7 +235,7 @@ if (isset($_POST['summon_shtml'])) {
     }
     .btn-submit:hover {
       background:#33ffee;
-      box-shadow:0 0 8px #00fceb;
+      box-shadow:0 0 8px #00ed12;
     }
     textarea.output-area {
       width:100%;
