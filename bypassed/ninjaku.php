@@ -6,10 +6,10 @@ error_reporting(0);
 @ini_set('log_errors','0');
 @clearstatcache();
 
-$s_title = "Rootkit Ninja"; // shell title
-$s_pass = "8ea5826700d709439efe49b8a6c3cb54"; // default : rootkitninja
-$s_color = "9d1920"; // shell theme color, default : 4c83af
-$s_login_time = 3600 * 24 * 7; // cookie time (login)
+$s_title = "Rootkit Ninja";
+$s_pass = "8ea5826700d709439efe49b8a6c3cb54";
+$s_color = "9d1920";
+$s_login_time = 3600 * 24 * 7;
 
 
 $s_auth = false; // login status
