@@ -26,7 +26,7 @@ body {
 h1 {
     text-align: center;
     font-size: 1.9rem;
-    color: #2196F3;
+    color: #cf2b28;
     margin-bottom: 16px;
     font-weight: 600;
     letter-spacing: 0.5px;
@@ -110,7 +110,7 @@ tr:hover {
 }
 
 .button {
-    background-color: #2196F3;
+    background-color: #cf2b28;
     color: white;
 }
 
@@ -147,7 +147,7 @@ tr:hover {
 
 .edit-file textarea:focus {
     outline: none;
-    border-color: #2196F3;
+    border-color: #cf2b28;
     box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.25);
 }
 
@@ -285,7 +285,7 @@ tr:hover {
     font-size: 1.4rem;
     color: #42a5f5;
     font-weight: 600;
-    border-bottom: 2px solid #2196F3;
+    border-bottom: 2px solid #cf2b28;
     padding-bottom: 8px;
 }
 
@@ -321,7 +321,7 @@ tr:hover {
     right: 20px;
     width: 40px;
     height: 40px;
-    background-color: #2196F3;
+    background-color: #cf2b28;
     border-radius: 10px;
     cursor: pointer;
     display: flex;
@@ -374,7 +374,7 @@ tr:hover {
 }
 
 .dropbtn {
-    background-color: #2196F3;
+    background-color: #cf2b28;
     color: white;
     padding: 10px 16px;
     font-size: 0.95rem;
