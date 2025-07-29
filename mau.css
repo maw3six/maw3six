@@ -7,27 +7,46 @@ body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     margin: 0;
     padding: 20px;
-    background-color: #f7f9fc;
-    color: #333;
+    background-color: #121212;
+    color: #e0e0e0;
     line-height: 1.5;
 }
 
 .container {
     max-width: 800px;
     margin: 20px auto;
-    padding: 20px;
-    background-color: #fff;
-    border-radius: 10px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    padding: 24px;
+    background-color: #1e1e1e;
+    border-radius: 12px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
     position: relative;
+    border: 1px solid #333;
 }
 
 h1 {
     text-align: center;
-    font-size: 1.8rem;
-    color: #1a73e8;
+    font-size: 1.9rem;
+    color: #2196F3;
     margin-bottom: 16px;
     font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* Breadcrumb */
+.breadcrumb {
+    margin: 12px 0;
+    font-size: 0.92rem;
+    color: #aaa;
+}
+
+.breadcrumb a {
+    color: #42a5f5;
+    text-decoration: none;
+}
+
+.breadcrumb a:hover {
+    text-decoration: underline;
+    color: #64b5f6;
 }
 
 /* Table Styling */
@@ -36,46 +55,37 @@ table {
     border-collapse: collapse;
     margin: 16px 0;
     font-size: 0.95rem;
+    background-color: #252525;
+    border-radius: 8px;
+    overflow: hidden;
 }
 
 th, td {
-    padding: 8px 12px;
+    padding: 10px 14px;
     text-align: left;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid #333;
+    color: #e0e0e0;
 }
 
 th {
-    background-color: #f1f5f9;
-    color: #333;
+    background-color: #2c2c2c;
+    color: #ffffff;
     font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
 }
 
 tr:hover {
-    background-color: #f8f9ff;
+    background-color: #333;
     transition: background-color 0.2s ease;
-}
-
-/* Breadcrumb */
-.breadcrumb {
-    margin: 12px 0;
-    font-size: 0.9rem;
-    color: #5f6368;
-}
-
-.breadcrumb a {
-    color: #1a73e8;
-    text-decoration: none;
-}
-
-.breadcrumb a:hover {
-    text-decoration: underline;
 }
 
 /* Upload & Command Forms */
 .upload-cmd-container {
     display: flex;
     gap: 16px;
-    margin: 12px 0;
+    margin: 16px 0;
     flex-wrap: wrap;
 }
 
@@ -88,51 +98,57 @@ tr:hover {
 /* Button Base */
 .button, .summon-button {
     display: inline-block;
-    padding: 6px 12px;
+    padding: 8px 14px;
     border: none;
-    border-radius: 6px;
-    font-size: 0.9rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
     cursor: pointer;
     text-decoration: none;
-    transition: all 0.2s ease;
+    font-weight: 500;
+    transition: all 0.25s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .button {
-    background-color: #1a73e8;
+    background-color: #2196F3;
     color: white;
 }
 
 .button:hover {
-    background-color: #0d62c9;
-    transform: translateY(-1px);
+    background-color: #1976D2;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
 }
 
 .summon-button {
-    background-color: #ea4335;
+    background-color: #d32f2f;
     color: white;
 }
 
 .summon-button:hover {
-    background-color: #d33027;
-    transform: translateY(-1px);
+    background-color: #c62828;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(211, 47, 47, 0.3);
 }
 
 /* Form Textarea */
 .edit-file textarea {
     width: 100%;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
+    padding: 12px;
+    border: 1px solid #444;
+    border-radius: 8px;
     font-family: 'Courier New', monospace;
     font-size: 0.95rem;
     resize: vertical;
-    transition: border-color 0.2s ease;
+    background-color: #2a2a2a;
+    color: #e0e0e0;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .edit-file textarea:focus {
     outline: none;
-    border-color: #1a73e8;
-    box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+    border-color: #2196F3;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.25);
 }
 
 /* Response Message */
@@ -140,37 +156,45 @@ tr:hover {
     margin-top: 12px;
     font-weight: 500;
     font-size: 0.95rem;
-    color: #d93025;
+    color: #ff5252;
+    background-color: #331818;
+    padding: 10px;
+    border-radius: 6px;
+    border-left: 4px solid #d32f2f;
 }
 
 /* Command Output */
 .command-output {
-    background-color: #1e1e1e;
+    background-color: #1a1a1a;
     color: #f8f8f8;
-    padding: 12px;
+    padding: 14px;
     font-family: 'Courier New', monospace;
-    font-size: 0.9rem;
-    border-radius: 6px;
-    border: 1px solid #ccc;
+    font-size: 0.95rem;
+    border-radius: 8px;
+    border: 1px solid #444;
     white-space: pre-wrap;
     overflow-y: auto;
-    height: 200px;
+    height: 220px;
     margin-top: 12px;
-    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
 .command-output::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
 }
 
 .command-output::-webkit-scrollbar-thumb {
     background-color: #555;
-    border-radius: 3px;
+    border-radius: 4px;
+}
+
+.command-output::-webkit-scrollbar-thumb:hover {
+    background-color: #777;
 }
 
 @media (max-width: 600px) {
     .command-output {
-        height: 150px;
+        height: 160px;
         font-size: 0.85rem;
     }
     .upload-cmd-container {
@@ -180,7 +204,7 @@ tr:hover {
 
 /* Rename Form */
 .rename-form {
-    margin-top: 16px;
+    margin-top: 18px;
 }
 
 /* Empty Button (Transparent) */
@@ -193,21 +217,31 @@ tr:hover {
 }
 
 .empty-button:hover {
-    opacity: 0.7;
+    opacity: 0.8;
 }
 
 /* Footer */
 .footer {
     max-width: 800px;
     margin: 24px auto;
-    padding: 16px;
-    background-color: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    padding: 18px;
+    background-color: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     text-align: center;
-    font-size: 0.9rem;
-    color: #5f6368;
+    font-size: 0.92rem;
+    color: #aaa;
+    line-height: 1.5;
+}
+
+.footer a {
+    color: #42a5f5;
+    text-decoration: none;
+}
+
+.footer a:hover {
+    text-decoration: underline;
 }
 
 /* Sidebar (Modern Slide-in Panel) */
@@ -217,32 +251,24 @@ tr:hover {
     right: -320px;
     width: 300px;
     height: 100%;
-    background-color: #fff;
-    box-shadow: -4px 0 12px rgba(0, 0, 0, 0.1);
+    background-color: #1e1e1e;
+    box-shadow: -6px 0 16px rgba(0, 0, 0, 0.3);
     transition: right 0.3s ease-in-out;
     z-index: 1000;
-    padding: 20px;
+    padding: 24px 20px;
     overflow-y: auto;
+    border-left: 1px solid #333;
 }
 
 .sidebar.open {
     right: 0;
 }
 
-.sidebar-content {
-    padding: 10px 0;
-}
-
-.sidebar-close {
-    text-align: right;
-    margin-bottom: 16px;
-}
-
 .sidebar-close button {
     padding: 6px 10px;
     border: none;
-    background-color: #f1f1f1;
-    color: #555;
+    background-color: #333;
+    color: #ccc;
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.9rem;
@@ -250,18 +276,21 @@ tr:hover {
 }
 
 .sidebar-close button:hover {
-    background-color: #e0e0e0;
+    background-color: #444;
+    color: #fff;
 }
 
 .sidebar h2 {
     margin-top: 0;
-    font-size: 1.3rem;
-    color: #1a73e8;
+    font-size: 1.4rem;
+    color: #42a5f5;
     font-weight: 600;
+    border-bottom: 2px solid #2196F3;
+    padding-bottom: 8px;
 }
 
 .info-container {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 }
 
 .info-list {
@@ -271,9 +300,14 @@ tr:hover {
 }
 
 .info-list li {
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     font-size: 0.95rem;
-    color: #555;
+    color: #ccc;
+    line-height: 1.4;
+}
+
+.info-list li strong {
+    color: #42a5f5;
 }
 
 .info-list li:last-child {
@@ -285,26 +319,28 @@ tr:hover {
     position: absolute;
     top: 20px;
     right: 20px;
-    width: 36px;
-    height: 36px;
-    background-color: #1a73e8;
-    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    background-color: #2196F3;
+    border-radius: 10px;
     cursor: pointer;
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 1001;
-    transition: background-color 0.3s;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 6px rgba(33, 150, 243, 0.3);
 }
 
 .menu-icon::before,
 .menu-icon::after {
     content: "";
     position: absolute;
-    width: 18px;
-    height: 2px;
+    width: 20px;
+    height: 2.5px;
     background-color: #fff;
-    transition: transform 0.3s ease, width 0.3s;
+    transition: all 0.3s ease;
+    border-radius: 1px;
 }
 
 .menu-icon::before {
@@ -316,17 +352,19 @@ tr:hover {
 }
 
 .menu-icon.open {
-    background-color: #ea4335;
+    background-color: #d32f2f;
+    transform: rotate(180deg);
+    box-shadow: 0 2px 6px rgba(211, 47, 47, 0.3);
 }
 
 .menu-icon.open::before {
     transform: translateY(0) rotate(45deg);
-    width: 20px;
+    width: 22px;
 }
 
 .menu-icon.open::after {
     transform: translateY(0) rotate(-45deg);
-    width: 20px;
+    width: 22px;
 }
 
 /* Dropdown */
@@ -336,41 +374,47 @@ tr:hover {
 }
 
 .dropbtn {
-    background-color: #1a73e8;
+    background-color: #2196F3;
     color: white;
-    padding: 10px 14px;
+    padding: 10px 16px;
     font-size: 0.95rem;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color 0.2s, transform 0.1s;
+    box-shadow: 0 2px 4px rgba(33, 150, 243, 0.2);
+}
+
+.dropbtn:hover {
+    background-color: #1976D2;
 }
 
 .dropdown-content {
     display: none;
     position: absolute;
-    background-color: #fff;
-    min-width: 180px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    border-radius: 6px;
+    background-color: #252525;
+    min-width: 190px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
     z-index: 1;
     overflow: hidden;
     top: 100%;
     right: 0;
+    border: 1px solid #444;
 }
 
 .dropdown-content a {
-    color: #333;
-    padding: 10px 16px;
+    color: #e0e0e0;
+    padding: 12px 16px;
     text-decoration: none;
     display: block;
-    font-size: 0.9rem;
-    transition: background-color 0.2s;
+    font-size: 0.92rem;
+    transition: background-color 0.2s, color 0.2s;
 }
 
 .dropdown-content a:hover {
-    background-color: #f1f5f9;
-    color: #1a73e8;
+    background-color: #333;
+    color: #42a5f5;
 }
 
 .dropdown:hover .dropdown-content {
@@ -378,5 +422,6 @@ tr:hover {
 }
 
 .dropdown:hover .dropbtn {
-    background-color: #0d62c9;
+    background-color: #1976D2;
+    transform: translateY(-1px);
 }
