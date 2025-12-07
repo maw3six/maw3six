@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pwned by maw3six</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background-color: #000; color: #fff; font-family: 'Orbitron', sans-serif;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      min-height: 100vh; text-align: center; overflow: hidden; position: relative;
+    }
+    body::before {
+      content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background-image: linear-gradient(rgba(0, 255, 255, 0.05) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(0, 255, 255, 0.05) 1px, transparent 1px);
+      background-size: 30px 30px; z-index: -2;
+    }
+    body::after {
+      content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.15) 1px, transparent 1px, transparent 2px);
+      pointer-events: none; z-index: -1; animation: scanline 8s linear infinite;
+    }
+    .scene { width: 200px; height: 200px; margin: 20px auto; perspective: 1000px; }
+    .cube {
+      width: 100%; height: 100%; position: relative; transform-style: preserve-3d;
+      transition: transform 0.1s ease-out;
+    }
+    .cube-face {
+      position: absolute; width: 200px; height: 200px; border: 2px solid #00ffff;
+      background-color: rgba(10, 10, 20, 0.7); display: flex; justify-content: center;
+      align-items: center; font-size: 18px; font-weight: bold; color: #00ffff;
+      text-shadow: 0 0 10px rgba(0, 255, 255, 0.7);
+      box-shadow: inset 0 0 20px rgba(0, 255, 255, 0.2), 0 0 20px rgba(0, 255, 255, 0.1);
+      backdrop-filter: blur(2px);
+    }
+    .cube-face::before {
+        content: ""; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background: repeating-linear-gradient(0deg, rgba(255, 0, 255, 0.05) 0px, rgba(255, 0, 255, 0.05) 1px, transparent 1px, transparent 3px),
+                    repeating-linear-gradient(90deg, rgba(255, 0, 255, 0.05) 0px, rgba(255, 0, 255, 0.05) 1px, transparent 1px, transparent 3px);
+        pointer-events: none;
+    }
+    .front  { transform: translateZ(100px); }
+    .back   { transform: rotateY(180deg) translateZ(100px); }
+    .right  { transform: rotateY(90deg) translateZ(100px); }
+    .left   { transform: rotateY(-90deg) translateZ(100px); }
+    .top    { transform: rotateX(90deg) translateZ(100px); }
+    .bottom { transform: rotateX(-90deg) translateZ(100px); }
+    h1 {
+      font-size: 32px; margin: 0 0 15px 0; letter-spacing: 2px; text-transform: uppercase;
+      color: #00ffff; text-shadow: 0 0 10px rgba(0, 255, 255, 0.7); animation: flicker 3s infinite alternate;
+    }
+    p { font-size: 16px; line-height: 1.8; color: #aaa; margin: 15px 0; }
+    a {
+      color: #00ffff; text-decoration: none; font-weight: bold; text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
+      position: relative;
+    }
+    a::after {
+      content: ''; position: absolute; bottom: -2px; left: 0; width: 0; height: 1px;
+      background-color: #00ffff; transition: width 0.3s ease;
+    }
+    a:hover::after { width: 100%; }
+    a:hover { text-decoration: none; color: #ff00ff; text-shadow: 0 0 10px rgba(255, 0, 255, 0.7); }
+    @keyframes flicker { 0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; } 20%, 24%, 55% { opacity: 0.6; } }
+    @keyframes scanline { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
+    h1::selection { background: transparent; }
+    h1 { position: relative; }
+    h1::before, h1::after { content: attr(data-text); position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+    h1::before { left: 2px; text-shadow: -1px 0 #ff00ff; clip: rect(44px, 450px, 56px, 0); animation: glitch-anim 5s infinite linear alternate-reverse; }
+    h1::after { left: -2px; text-shadow: -1px 0 #00ffff, 1px 0 #ff00ff; clip: rect(44px, 450px, 56px, 0); animation: glitch-anim2 5s infinite linear alternate-reverse; }
+    @keyframes glitch-anim { 0%{clip:rect(42px,9999px,44px,0)}5%{clip:rect(12px,9999px,59px,0)}10%{clip:rect(48px,9999px,29px,0)}15%{clip:rect(42px,9999px,73px,0)}20%{clip:rect(63px,9999px,27px,0)}25%{clip:rect(34px,9999px,55px,0)}30%{clip:rect(86px,9999px,73px,0)}35%{clip:rect(20px,9999px,20px,0)}40%{clip:rect(26px,9999px,60px,0)}45%{clip:rect(25px,9999px,66px,0)}50%{clip:rect(57px,9999px,98px,0)}55%{clip:rect(5px,9999px,46px,0)}60%{clip:rect(82px,9999px,31px,0)}65%{clip:rect(54px,9999px,27px,0)}70%{clip:rect(28px,9999px,99px,0)}75%{clip:rect(45px,9999px,69px,0)}80%{clip:rect(23px,9999px,85px,0)}85%{clip:rect(1px,9999px,83px,0)}90%{clip:rect(72px,9999px,11px,0)}95%{clip:rect(60px,9999px,89px,0)}100%{clip:rect(52px,9999px,74px,0)} }
+    @keyframes glitch-anim2 { 0%{clip:rect(65px,9999px,100px,0)}5%{clip:rect(52px,9999px,74px,0)}10%{clip:rect(79px,9999px,85px,0)}15%{clip:rect(75px,9999px,5px,0)}20%{clip:rect(67px,9999px,61px,0)}25%{clip:rect(14px,9999px,79px,0)}30%{clip:rect(1px,9999px,66px,0)}35%{clip:rect(86px,9999px,30px,0)}40%{clip:rect(23px,9999px,98px,0)}45%{clip:rect(85px,9999px,72px,0)}50%{clip:rect(71px,9999px,75px,0)}55%{clip:rect(2px,9999px,48px,0)}60%{clip:rect(30px,9999px,16px,0)}65%{clip:rect(59px,9999px,50px,0)}70%{clip:rect(41px,9999px,62px,0)}75%{clip:rect(2px,9999px,82px,0)}80%{clip:rect(47px,9999px,73px,0)}85%{clip:rect(3px,9999px,27px,0)}90%{clip:rect(26px,9999px,55px,0)}95%{clip:rect(42px,9999px,97px,0)}100%{clip:rect(38px,9999px,49px,0)} }
+  </style>
+</head>
+<body>
+    <h1 data-text="pwned by maw">pwned by <a href="https://t.me/maw3six" target="_blank">maw</a></h1>
+    
+    <br>
+    <div class="scene">
+      <div class="cube" id="cube">
+        <div class="cube-face front">MAW3SIX</div>
+        <div class="cube-face back">MAW3SIX</div>
+        <div class="cube-face right">MAW3SIX</div>
+        <div class="cube-face left">MAW3SIX</div>
+        <div class="cube-face top">MAW3SIX</div>
+        <div class="cube-face bottom">MAW3SIX</div>
+      </div>
+    </div>
+    <br>
+    <p class="hackertext">Access Granted.</p>
+
+  <script>
+    const cube = document.getElementById('cube');
+    let isRotating = true;
+    let rotationX = 0;
+    let rotationY = 0;
+
+    function autoRotate() {
+      if (isRotating) {
+        rotationX += 0.1;
+        rotationY += 0.2;
+        cube.style.transform = `rotateX(${rotationX}deg) rotateY(${rotationY}deg)`;
+      }
+      requestAnimationFrame(autoRotate);
+    }
+    autoRotate();
+
+    let isDragging = false;
+    let previousMouseX = 0;
+    let previousMouseY = 0;
+
+    document.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      previousMouseX = e.clientX;
+      previousMouseY = e.clientY;
+      isRotating = false;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        const deltaX = e.clientX - previousMouseX;
+        const deltaY = e.clientY - previousMouseY;
+        rotationY += deltaX * 0.5;
+        rotationX -= deltaY * 0.5;
+        rotationX = Math.max(-90, Math.min(90, rotationX));
+        cube.style.transform = `rotateX(${rotationX}deg) rotateY(${rotationY}deg)`;
+        previousMouseX = e.clientX;
+        previousMouseY = e.clientY;
+      }
+    });
+
+    document.addEventListener('mouseup', () => { isDragging = false; });
+    document.addEventListener('mouseleave', () => { isDragging = false; });
+  </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon='{"version":"2024.11.0","token":"7306a799de46465b84b21c4936ecdf7d","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9aa565574b144e3c',t:'MTc2NTEyNDkwMw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
