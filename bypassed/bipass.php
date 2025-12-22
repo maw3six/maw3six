@@ -1,6 +1,6 @@
 <?php
 session_start();
-$hashed_password='$2a$12$qNyoZTHZz6StK2JFOhKrN.AbTKhRb1UrOiECkNQ87ncGV8//24l3S';
+$hashed_password='$2a$12$cvbVEfpa2rHhdkFl885JUeCPbsNzoXilJsM7vENpxmE7l8A5IbGAS';
 function isAuthenticated(){return isset($_SESSION['logged_in'])&&$_SESSION['logged_in']===true;}
 if($_SERVER['REQUEST_METHOD']==='POST'&&isset($_POST['password'])){
     if(password_verify($_POST['password'],$hashed_password)){$_SESSION['logged_in']=true;header("Location: ".$_SERVER['PHP_SELF']);exit;}
