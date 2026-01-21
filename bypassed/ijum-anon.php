@@ -29,7 +29,7 @@ if (!isAuthenticated()) :
 </head>
 <body>
     <form method="POST">
-        <h2>403 Aja</h2>
+        <h2>becanda mulu pler</h2>
         <?php if (isset($error)) echo "<p style='color:red;'>$error</p>"; ?>
         <input type="password" name="password" placeholder="Password" required>
         <button type="submit">OK</button>
