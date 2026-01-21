@@ -24,7 +24,7 @@ if (!isAuthenticated()) :
 <head>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin-top: 100px; }
-        form { display: inline-block; padding: 20px; border: 1px solid #ccc; }
+        form { display: inline-block; }
     </style>
 </head>
 <body>
@@ -32,7 +32,7 @@ if (!isAuthenticated()) :
         <h2>403 Aja</h2>
         <?php if (isset($error)) echo "<p style='color:red;'>$error</p>"; ?>
         <input type="password" name="password" placeholder="Password" required>
-        <button type="submit">>></button>
+        <button type="submit">OK</button>
     </form>
 </body>
 </html>
