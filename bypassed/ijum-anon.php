@@ -24,7 +24,7 @@ if (!isAuthenticated()) :
 <head>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin-top: 100px; }
-        form { display: inline-block; padding: 20px; border: 1px solid #ccc; background: #f9f9f9; }
+        form { display: inline-block; padding: 20px; border: 1px solid #ccc; }
     </style>
 </head>
 <body>
