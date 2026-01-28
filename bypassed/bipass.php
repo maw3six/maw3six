@@ -18,7 +18,7 @@ if(!isAuthenticated()):
 <meta name="viewport" content="width=device-width, initial-scale=0.60, shrink-to-fit=no">
 <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-<title>MAW3SIX CLONE</title>
+<title>Son Of Zeus</title>
 <style> @import url('https://fonts.googleapis.com/css2?family=Kelly+Slab&display=swap');
 .bg-dark { background-color: black; }
 .border { border: 2px solid #31ed06!important; border-radius: 0.75rem!important; background-color: transparent; color: white; padding-left: 1rem; }
