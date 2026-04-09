@@ -3,7 +3,7 @@ ob_start();
 
 $use_auth = true;
 $auth_users = array(
-    'maw' => '$2a$12$PzO.GuHsJgEMfPRW6DI/juY8PwjaN3cf8S0sbC/folckvfEvlGTs.',
+    'maw' => '$2a$12$134pM4AeFVDPqGCjKvr/9.7jSWfcfe9dQc2U0lA2ms9sUZNjcbZkW',
 );
 
 $use_highlightjs = true;
