@@ -1,0 +1,17 @@
+/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/api/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/yii/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/laravel/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/laravel52/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/lib/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/zend/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/assets/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/asset/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/dist/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/public/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/tests/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/plugin/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/admin/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/dashboard/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/administrator/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
