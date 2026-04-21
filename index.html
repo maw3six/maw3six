@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en" prefix="og: https://ogp.me/ns#">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+  <!-- Primary Meta Tags -->
+  <title>Maw3six — Penetration Tester | Security Researcher</title>
+  <meta name="title" content="Maw3six — Penetration Tester | Security Researcher" />
+  <meta name="description" content="Pentester & security researcher specializing in Web App, Network, and Red Team. Available for engagements & collaborations." />
+  <meta name="keywords" content="pentester, penetration tester, security researcher, ethical hacker, web security, red team, bug bounty, maw3six" />
+  <meta name="author" content="Maw3six" />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="color-scheme" content="dark" />
+
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://maw3six.github.io/" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="profile" />
+  <meta property="og:url" content="https://maw3six.github.io/" />
+  <meta property="og:title" content="Maw3six — Penetration Tester" />
+  <meta property="og:description" content="Pentester & security researcher. Specialties: Web App · Network · Red Team." />
+  <meta property="og:image" content="https://maw3six.github.io/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Maw3six profile card — Penetration Tester" />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:site_name" content="Maw3six" />
+  <meta property="profile:username" content="maw3six" />
+
+  <!-- Twitter / X Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@maw3six" />
+  <meta name="twitter:creator" content="@maw3six" />
+  <meta name="twitter:url" content="https://maw3six.github.io/" />
+  <meta name="twitter:title" content="Maw3six — Penetration Tester" />
+  <meta name="twitter:description" content="Pentester & security researcher. Specialties: Web App · Network · Red Team." />
+  <meta name="twitter:image" content="https://maw3six.github.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Maw3six profile card" />
+
+  <!-- PWA / App Meta -->
+  <meta name="application-name" content="Maw3six" />
+  <meta name="apple-mobile-web-app-title" content="Maw3six" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="format-detection" content="telephone=no" />
+
+  <!-- Favicon (inline SVG fallback) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23000'/><text y='.9em' font-size='70' x='10' fill='%2300ff41'>0x</text></svg>" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23000'/><text y='.9em' font-size='70' x='10' fill='%2300ff41'>0x</text></svg>" />
+
+  <!-- JSON-LD Structured Data (location removed) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Person",
+    "name": "Maw3six",
+    "alternateName": "@maw3six",
+    "description": "Penetration Tester & Security Researcher specializing in Web App, Network, and Red Team.",
+    "jobTitle": "Penetration Tester",
+    "url": "https://maw3six.github.io/",
+    "sameAs": [
+      "https://github.com/maw3six",
+      "https://t.me/maw3six"
+    ],
+    "knowsAbout": ["Web Application Security", "Network Security", "Red Teaming", "OSINT", "Penetration Testing"]
+  }
+  </script>
+
+  <!-- Preconnect for fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      font-size: 16px;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      background: #050505;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      font-family: 'Share Tech Mono', monospace;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .card {
+      background: #000;
+      width: 100%;
+      max-width: 480px;
+      border-radius: 16px;
+      padding: clamp(1.25rem, 5vw, 2.5rem) clamp(1rem, 4vw, 2rem);
+      font-family: 'Share Tech Mono', monospace;
+      color: #00ff41;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #00ff4122;
+    }
+
+    .scanline {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,255,65,0.015) 2px,
+        rgba(0,255,65,0.015) 4px
+      );
+      pointer-events: none;
+      border-radius: 16px;
+    }
+
+    .grid-bg {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-image:
+        linear-gradient(rgba(0,255,65,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,255,65,0.04) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none;
+      border-radius: 16px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: clamp(0.75rem, 3vw, 1.5rem);
+      margin-bottom: 1.5rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .avatar-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .avatar {
+      width: clamp(60px, 18vw, 80px);
+      height: clamp(60px, 18vw, 80px);
+      border-radius: 50%;
+      background: #0a0a0a;
+      border: 2px solid #00ff41;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Orbitron', monospace;
+      font-size: clamp(18px, 5vw, 28px);
+      font-weight: 900;
+      color: #00ff41;
+      text-shadow: 0 0 12px #00ff41;
+      animation: pulse-border 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-border {
+      0%, 100% { box-shadow: 0 0 8px #00ff4144, 0 0 16px #00ff4122; }
+      50%       { box-shadow: 0 0 16px #00ff4188, 0 0 32px #00ff4144; }
+    }
+
+    .status-dot {
+      position: absolute;
+      bottom: 3px;
+      right: 3px;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: #00ff41;
+      border: 2px solid #000;
+      animation: blink 1.5s step-start infinite;
+      box-shadow: 0 0 6px #00ff41;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.2; }
+    }
+
+    .name {
+      font-family: 'Orbitron', monospace;
+      font-size: clamp(16px, 5vw, 22px);
+      font-weight: 900;
+      color: #00ff41;
+      text-shadow: 0 0 10px #00ff4188;
+      letter-spacing: 2px;
+    }
+
+    .role {
+      font-size: clamp(10px, 2.5vw, 12px);
+      color: #00cc33;
+      margin-top: 4px;
+      letter-spacing: 2px;
+    }
+
+    .handle {
+      font-size: clamp(10px, 2.5vw, 12px);
+      color: #006614;
+      margin-top: 2px;
+    }
+
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #00ff41, transparent);
+      margin: 1rem 0;
+      opacity: 0.4;
+      position: relative;
+      z-index: 1;
+    }
+
+    .section-label {
+      font-size: 10px;
+      color: #006614;
+      letter-spacing: 3px;
+      margin-bottom: 0.5rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .bio {
+      font-size: clamp(11px, 2.8vw, 12px);
+      color: #00aa2a;
+      line-height: 1.8;
+      margin-bottom: 1.25rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .bio span {
+      color: #00ff41;
+    }
+
+    .skills-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-bottom: 1.25rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .skill-tag {
+      padding: 4px 10px;
+      border: 1px solid #00ff4133;
+      border-radius: 4px;
+      font-size: clamp(9px, 2.2vw, 10px);
+      color: #00cc33;
+      background: rgba(0,255,65,0.05);
+      letter-spacing: 1px;
+      transition: all 0.2s;
+      cursor: default;
+      white-space: nowrap;
+    }
+
+    @media (hover: hover) {
+      .skill-tag:hover {
+        border-color: #00ff41;
+        background: rgba(0,255,65,0.12);
+        color: #00ff41;
+        box-shadow: 0 0 8px rgba(0,255,65,0.2);
+      }
+    }
+
+    .links {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .link-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: clamp(10px, 3vw, 12px) 14px;
+      border: 1px solid #00ff4120;
+      border-radius: 6px;
+      background: rgba(0,255,65,0.03);
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      color: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    @media (hover: hover) {
+      .link-item:hover {
+        border-color: #00ff4166;
+        background: rgba(0,255,65,0.08);
+        transform: translateX(4px);
+      }
+    }
+
+    .link-item:active {
+      background: rgba(0,255,65,0.12);
+      border-color: #00ff4166;
+    }
+
+    .link-icon {
+      font-size: 11px;
+      width: 72px;
+      min-width: 72px;
+      text-align: left;
+      color: #00ff41;
+      font-family: monospace;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    .link-name {
+      font-size: clamp(10px, 2.6vw, 11px);
+      color: #00cc33;
+      letter-spacing: 1px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .link-arrow {
+      font-size: 10px;
+      color: #004d10;
+      flex-shrink: 0;
+    }
+
+    .terminal-line {
+      font-size: clamp(9px, 2.3vw, 10px);
+      color: #004d10;
+      margin-top: 1.25rem;
+      position: relative;
+      z-index: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cursor {
+      display: inline-block;
+      width: 7px;
+      height: 12px;
+      background: #00ff41;
+      margin-left: 2px;
+      vertical-align: middle;
+      animation: blink 1s step-start infinite;
+    }
+
+    /* Responsive breakpoints */
+    @media (max-width: 360px) {
+      .name { letter-spacing: 1px; }
+      .role { letter-spacing: 1px; }
+      .skills-grid { gap: 5px; }
+      .skill-tag { padding: 3px 8px; }
+    }
+
+    @media (min-width: 600px) {
+      body { padding: 2rem; }
+      .card { padding: 2.5rem 2rem; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card" role="main">
+      <div class="grid-bg" aria-hidden="true"></div>
+      <div class="scanline" aria-hidden="true"></div>
+
+      <header class="header">
+        <div class="avatar-wrap">
+          <div class="avatar" aria-label="Avatar Maw3six">MAW</div>
+          <div class="status-dot" aria-label="Status: online"></div>
+        </div>
+        <div>
+          <h1 class="name">Maw3six</h1>
+          <p class="role">// PENETRATION TESTER</p>
+          <p class="handle">@maw3six</p>
+        </div>
+      </header>
+
+      <div class="divider" aria-hidden="true"></div>
+
+      <section aria-label="About">
+        <p class="section-label">&gt; ABOUT.TXT</p>
+        <p class="bio">
+          Pentester &amp; security researcher.<br>
+          Specialties: <span>Web App · Network · Red Team</span>
+        </p>
+      </section>
+
+      <section aria-label="Skills">
+        <p class="section-label">&gt; SKILLS.LOG</p>
+        <div class="skills-grid">
+          <span class="skill-tag">RECON</span>
+          <span class="skill-tag">OSINT</span>
+          <span class="skill-tag">SQLi</span>
+          <span class="skill-tag">XSS</span>
+          <span class="skill-tag">BURP SUITE</span>
+          <span class="skill-tag">NMAP</span>
+          <span class="skill-tag">PRIVILEGE ESC</span>
+          <span class="skill-tag">REVERSE SHELL</span>
+        </div>
+      </section>
+
+      <section aria-label="Links">
+        <p class="section-label">&gt; LINKS.SH</p>
+        <nav class="links">
+          <a class="link-item" href="https://github.com/maw3six" target="_blank" rel="noopener noreferrer" aria-label="GitHub Maw3six">
+            <span class="link-icon">[Github]</span>
+            <span class="link-name">github.com/maw3six</span>
+            <span class="link-arrow" aria-hidden="true">&rarr;</span>
+          </a>
+          <a class="link-item" href="https://t.me/maw3six" target="_blank" rel="noopener noreferrer" aria-label="Telegram Maw3six">
+            <span class="link-icon">[Telegram]</span>
+            <span class="link-name">t.me/maw3six</span>
+            <span class="link-arrow" aria-hidden="true">&rarr;</span>
+          </a>
+          <a class="link-item" href="https://haxor.id/archive/attacker/maw3six" target="_blank" rel="noopener noreferrer" aria-label="Mirror Maw3six">
+            <span class="link-icon">[Mirror]</span>
+            <span class="link-name">haxor.id/archive/attacker/maw3six</span>
+            <span class="link-arrow" aria-hidden="true">&rarr;</span>
+          </a>
+        </nav>
+      </section>
+
+      <p class="terminal-line" aria-hidden="true">
+        root@maw:~$ ./connect.sh --target all<span class="cursor"></span>
+      </p>
+    </div>
+  </main>
+</body>
+</html>
