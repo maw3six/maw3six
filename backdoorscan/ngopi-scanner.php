@@ -4,7 +4,7 @@ set_time_limit(120);
 ini_set('max_execution_time', '120');
 
 $access_password = 'maw3six';
-$provided_pass = $_GET['p'] ?? $_POST['p'] ?? '';
+$provided_pass = $_GET['pass'] ?? $_POST['pass'] ?? '';
 if ($provided_pass !== $access_password) {
     header('Location: /404');
     exit;
@@ -93,7 +93,7 @@ if (!is_dir($default_dir) || !is_readable($default_dir)) {
 $scan_dir = $default_dir;
 $has_scanned = false;
 $scan_timed_out = false;
-$min_files = [];
+$dangerous_files = [];
 $malware_hits = [];
 $deleted_files = [];
 
