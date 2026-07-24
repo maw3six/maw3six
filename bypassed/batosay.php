@@ -1,7 +1,7 @@
 <?php
 session_start();
 
-$hashed_password = '$2a$12$AF.sjRyPPrIw9pwlRq6zsuF2nEQ5/r0kJ7V6fVXAxIx1nNcqYtjl6';
+$hashed_password = '$2a$12$C.XBT5eydZL01GXungU45OgFt.EI06rYEemiRPYMMYPjLo/iuiwzy';
 
 function isAuthenticated() {
     return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
